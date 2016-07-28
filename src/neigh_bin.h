@@ -39,10 +39,10 @@ class NeighBin : protected Pointers {
   NeighBin(class LAMMPS *);
   ~NeighBin();
   void copy_neighbor_info();
-  void bin_atoms_setup(int);
-  bigint memory_usage();
+  virtual void bin_atoms_setup(int);
+  virtual bigint memory_usage();
 
-  virtual void setup_bins(int) = 0;
+  virtual void setup_bins(int);
   virtual void bin_atoms() = 0;
 
  protected:

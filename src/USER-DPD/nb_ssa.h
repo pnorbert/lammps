@@ -13,22 +13,33 @@
 
 #ifdef NEIGH_BIN_CLASS
 
-NeighBinStyle(NEIGH_BIN_STANDARD,NeighBinStandard)
+NeighBinStyle(NEIGH_BIN_SSA,NeighBinSSA)
 
 #else
 
-#ifndef LMP_NEIGH_BIN_STANDARD_H
-#define LMP_NEIGH_BIN_STANDARD_H
+#ifndef LMP_NEIGH_BIN_SSA_H
+#define LMP_NEIGH_BIN_SSA_H
 
 #include "neigh_bin.h"
 
 namespace LAMMPS_NS {
 
-class NeighBinStandard : public NeighBin {
+class NeighBinSSA : public NeighBin {
  public:
-  NeighBinStandard(class LAMMPS *);
-  ~NeighBinStandard() {}
+
+  int *bins_ssa;             // index of next atom in each bin
+  int maxbin_ssa;            // size of bins_ssa array
+  int *binhead_ssa;          // index of 1st local atom in each bin
+  int *gbinhead_ssa;         // index of 1st ghost atom in each bin
+  int maxhead_ssa;           // size of binhead_ssa and gbinhead_ssa arrays
+
+  NeighBinSSA(class LAMMPS *);
+  ~NeighBinSSA();
+
+  void bin_atoms_setup(int);
   void bin_atoms();
+
+  bigint memory_usage();
 };
 
 }

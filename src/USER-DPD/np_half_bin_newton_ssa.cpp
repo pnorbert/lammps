@@ -13,11 +13,12 @@
 
 /* ----------------------------------------------------------------------
    Contributing authors: 
-   James Larentzos and Timothy I. Mattox (Engility Corporation)
+   James Larentzos (ARL) and Timothy I. Mattox (Engility Corporation)
 ------------------------------------------------------------------------- */
 
 #include "np_half_bin_newton_ssa.h"
 #include "neighbor.h"
+#include "nb_ssa.h"
 #include "neigh_list.h"
 #include "atom.h"
 #include "atom_vec.h"
@@ -79,71 +80,13 @@ void NeighPairHalfBinNewtonSSA::build(NeighList *list)
   int **firstneigh = list->firstneigh;
   MyPage<int> *ipage = list->ipage;
 
+  NeighBinSSA *nb_ssa = dynamic_cast<NeighBinSSA*>(nb);
+  if (!nb_ssa) error->one(FLERR, "NeigBin wasn't a NeighBinSSA object");
+  int *bins_ssa = nb_ssa->bins_ssa;
+  int *binhead_ssa = nb_ssa->binhead_ssa;
+  int *gbinhead_ssa = nb_ssa->gbinhead_ssa;
+
   int inum = 0;
-
-  // bin owned and ghost atoms for use by Shardlow Splitting Algorithm
-  // exclude ghost atoms that are not in the Active Interaction Regions (AIR)
-
-  // NOTE to Tim: this binatomflag no longer exists
-  //   the logic up higher assures that binning has been done
-  //     before this build() method is called
-  //   maybe this code below needs to be in a new NeighBinShardlow class?
-  // this class also inherits NeighPair::nb from its parent
-  //   which points to the NeighBin class that did the binning
-  //   there are last_step variables stored there which indicate
-  //   the last time binning was done
-  // the basic question is what data is created/stored by SSA binning
-  //   and in what class should it live?
-  //   if it is created by the binning operation, then I think
-  //     it should be in a new NeighBinShardlow class
-
-  if (true /* binatomflag */) { // only false in Neighbor::build_one
-
-    if (mbins > list->maxhead_ssa) {
-      list->maxhead_ssa = mbins;
-      memory->destroy(list->gbinhead_ssa);
-      memory->destroy(list->binhead_ssa);
-      memory->create(list->binhead_ssa,list->maxhead_ssa,"binhead_ssa");
-      memory->create(list->gbinhead_ssa,list->maxhead_ssa,"gbinhead_ssa");
-    }
-    for (i = 0; i < mbins; i++) {
-      list->gbinhead_ssa[i] = -1;
-      list->binhead_ssa[i] = -1;
-    }
-
-    if (nall > list->maxbin_ssa) {
-      list->maxbin_ssa = nall;
-      memory->destroy(list->bins_ssa);
-      memory->create(list->bins_ssa,list->maxbin_ssa,"bins_ssa");
-    }
-
-    // bin in reverse order so linked list will be in forward order
-
-    if (includegroup) {
-      int bitmask = group->bitmask[includegroup];
-      int nowned = atom->nlocal; // NOTE: nlocal was set to atom->nfirst above
-      for (i = nall-1; i >= nowned; i--) {
-        if (ssaAIR[i] < 2) continue; // skip ghost atoms not in AIR
-        if (mask[i] & bitmask) {
-          ibin = coord2bin(x[i]);
-          list->bins_ssa[i] = list->gbinhead_ssa[ibin];
-          list->gbinhead_ssa[ibin] = i;
-        }
-      }
-    } else {
-      for (i = nall-1; i >= nlocal; i--) {
-        if (ssaAIR[i] < 2) continue; // skip ghost atoms not in AIR
-        ibin = coord2bin(x[i]);
-        list->bins_ssa[i] = list->gbinhead_ssa[ibin];
-        list->gbinhead_ssa[ibin] = i;
-      }
-    }
-    for (i = nlocal-1; i >= 0; i--) {
-      ibin = coord2bin(x[i]);
-      list->bins_ssa[i] = list->binhead_ssa[ibin];
-      list->binhead_ssa[ibin] = i;
-    }
-  }  // else reuse previous binning. See Neighbor::build_one comment
 
   ipage->reset();
 
@@ -167,7 +110,7 @@ void NeighPairHalfBinNewtonSSA::build(NeighList *list)
     // loop over rest of local atoms in i's bin
     // just store them, since j is beyond i in linked list
 
-    for (j = list->bins_ssa[i]; j >= 0; j = list->bins_ssa[j]) {
+    for (j = bins_ssa[i]; j >= 0; j = bins_ssa[j]) {
 
       jtype = type[j];
       if (exclude && exclusion(i,j,itype,jtype,mask,molecule)) continue;
@@ -200,8 +143,8 @@ void NeighPairHalfBinNewtonSSA::build(NeighList *list)
     int stencil_end = aux_nstencil[0];
 
     for (k = 0; k < stencil_end; k++) {
-      for (j = list->binhead_ssa[ibin+stencil[k]]; j >= 0; 
-           j = list->bins_ssa[j]) {
+      for (j = binhead_ssa[ibin+stencil[k]]; j >= 0; 
+           j = bins_ssa[j]) {
 
         jtype = type[j];
         if (exclude && exclusion(i,j,itype,jtype,mask,molecule)) continue;
@@ -236,8 +179,8 @@ void NeighPairHalfBinNewtonSSA::build(NeighList *list)
     // Note2: only non-pure locals can have ghosts as neighbors
 
     if (ssaAIR[i] == 1) for (k = 0; k < nstencil; k++) {
-      for (j = list->gbinhead_ssa[ibin+stencil[k]]; j >= 0; 
-           j = list->bins_ssa[j]) {
+      for (j = gbinhead_ssa[ibin+stencil[k]]; j >= 0; 
+           j = bins_ssa[j]) {
 
         jtype = type[j];
         if (exclude && exclusion(i,j,itype,jtype,mask,molecule)) continue;
