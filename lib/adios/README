@@ -1,0 +1,23 @@
+The Makefile.lammps file in this directory is used when building LAMMPS with
+its USER-ADUIS package installed.  The file has several settings needed to
+compile and link LAMMPS with the ADIOS library.  
+Edit Makefile.lammps before building LAMMPS itself. 
+
+To illustrate, these are example settings. We suggest to use the 
+adios_config binary to determine the link options for the actual 
+adios installation. 
+
+ADIOS_DIR = /opt/adios
+adios_SYSINC = -I${ADIOS_DIR}/include
+adios_SYSLIB = `${ADIOS_DIR}/bin/adios_config -l`
+adios_SYSPATH =
+
+adios_SYSINC refers to the include directory of the installed ADIOS library
+
+adios_SYSLIB refers to the libraries needed to link to from an application
+(LAMMPS in this case) to "embed" ADIOS in the application. ADIOS may depend on
+various other libraries which are needed when using the USER-ADIOS package.
+
+adios_SYSPATH = refers to the path (e.g. -L/usr/local/lib) where the dependent libraries
+can be found. You may need to use this setting if the path of a dependent library is not included in
+your LD_LIBRARY_PATH environment variable.

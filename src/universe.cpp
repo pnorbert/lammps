@@ -21,6 +21,9 @@
 #include "error.h"
 #include "force.h"
 #include "memory.h"
+#ifdef LMP_ADIOS
+#  include "adios.h"
+#endif
 
 using namespace LAMMPS_NS;
 
@@ -51,12 +54,20 @@ Universe::Universe(LAMMPS *lmp, MPI_Comm communicator) : Pointers(lmp)
 
   memory->create(uni2orig,nprocs,"universe:uni2orig");
   for (int i = 0; i < nprocs; i++) uni2orig[i] = i;
+
+#ifdef LMP_ADIOS
+  adios_init_noxml(uorig);
+#endif
 }
 
 /* ---------------------------------------------------------------------- */
 
 Universe::~Universe()
 {
+#ifdef LMP_ADIOS
+  adios_finalize(me);
+#endif
+
   if (uworld != uorig) MPI_Comm_free(&uworld);
   memory->destroy(procs_per_world);
   memory->destroy(root_proc);

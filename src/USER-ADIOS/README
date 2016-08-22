@@ -1,0 +1,9 @@
+This package provides the adios dump and restart styles.
+
+See the doc page for the "dump adios" and "restart adios" commands. 
+These styles require having ADIOS itself installed on your system.
+
+The person who created this package is Norbert Podhorszki (Oak Ridge National Laboratory); 
+If you need help, please submit a ticket at the OLCF ticket user support mentioning his name in the ticket.
+https://www.olcf.ornl.gov/support/submit-ticket
+

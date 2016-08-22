@@ -10,12 +10,13 @@ ADIOS_FLIB := $(shell ${ADIOS_DIR}/bin/adios_config -l)
 # specify flags and libraries needed for your compiler
 
 CC =		mpicxx
-CCFLAGS =	-g -O3  $(ADIOS_INC) 
+#CCFLAGS =	-g -O3  $(ADIOS_INC) 
+CCFLAGS =	-g -O0  $(ADIOS_INC) 
 SHFLAGS =	-fPIC
 DEPFLAGS =	-M
 
 LINK =		mpicxx
-LINKFLAGS =	-g -O
+LINKFLAGS =	-g -O0
 LIB = $(ADIOS_FLIB) -lm -lpthread
 SIZE =		size
 
