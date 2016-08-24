@@ -22,6 +22,7 @@
 #include "update.h"
 #include "group.h"
 #include "memory.h"
+#include "universe.h"
 #include "error.h"
 
 
@@ -271,9 +272,11 @@ void DumpAtomADIOS::init_style()
     adios_define_attribute_byvalue (gh, "image", "",      adios_integer, 1,  &image_flag);
     adios_define_attribute_byvalue (gh, "boundary", "",   adios_integer, 6, domain->boundary);
 
-    adios_define_attribute (gh, "columns", "",    adios_string, columns, NULL);
-    adios_define_attribute (gh, "boundarystr", "", adios_string, boundstr, NULL);
+    adios_define_attribute (gh, "columns", "",           adios_string, columns, NULL);
+    adios_define_attribute (gh, "boundarystr", "",       adios_string, boundstr, NULL);
     adios_define_attribute (gh, "LAMMPS/dump_style", "", adios_string, "atom", NULL);
+    adios_define_attribute (gh, "LAMMPS/version", "",    adios_string, universe->version, NULL);
+    adios_define_attribute (gh, "LAMMPS/num_ver", "",    adios_string, universe->num_ver, NULL);
 
     adios_define_var (gh, "nme","",    adios_long, NULL, NULL, NULL); // local dimension variable
     adios_define_var (gh, "offset","", adios_long, NULL, NULL, NULL); // local dimension variable

@@ -30,6 +30,7 @@
 #include "modify.h"
 #include "compute.h"
 #include "fix.h"
+#include "universe.h"
 #include "memory.h"
 #include "error.h"
 #include <stdlib.h>
@@ -319,9 +320,11 @@ void DumpCustomADIOS::init_style()
         adios_define_attribute_byvalue (gh, "variable_ids", "",    adios_integer, nvariable, variable);
     }
 
-    adios_define_attribute (gh, "columnstr", "",    adios_string, columns, NULL);
-    adios_define_attribute (gh, "boundarystr", "", adios_string, boundstr, NULL);
+    adios_define_attribute (gh, "columnstr", "",         adios_string, columns, NULL);
+    adios_define_attribute (gh, "boundarystr", "",       adios_string, boundstr, NULL);
     adios_define_attribute (gh, "LAMMPS/dump_style", "", adios_string, "custom", NULL);
+    adios_define_attribute (gh, "LAMMPS/version", "",    adios_string, universe->version, NULL);
+    adios_define_attribute (gh, "LAMMPS/num_ver", "",    adios_string, universe->num_ver, NULL);
 
     adios_define_var (gh, "nme","",    adios_long, NULL, NULL, NULL); // local dimension variable
     adios_define_var (gh, "offset","", adios_long, NULL, NULL, NULL); // local dimension variable
