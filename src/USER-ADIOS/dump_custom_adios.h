@@ -13,25 +13,24 @@
 
 #ifdef DUMP_CLASS
 
-DumpStyle(atom/adios,DumpAtomADIOS)
+DumpStyle(custom/adios,DumpCustomADIOS)
 
 #else
 
-#ifndef LMP_DUMP_ATOM_ADIOS_H
-#define LMP_DUMP_ATOM_ADIOS_H
+#ifndef LMP_DUMP_CUSTOM_ADIOS_H
+#define LMP_DUMP_CUSTOM_ADIOS_H
 
-#include "dump_atom.h"
+#include "dump_custom.h"
 #include <stdlib.h>
 #include <stdint.h>
 #include "adios.h"
 
 namespace LAMMPS_NS {
 
-class DumpAtomADIOS : public DumpAtom {
-
+class DumpCustomADIOS : public DumpCustom {
  public:
-  DumpAtomADIOS(class LAMMPS *, int, char **);
-  virtual ~DumpAtomADIOS();
+  DumpCustomADIOS(class LAMMPS *, int, char **);
+  virtual ~DumpCustomADIOS();
 
  protected:
 
@@ -40,6 +39,7 @@ class DumpAtomADIOS : public DumpAtom {
   uint64_t groupsize; // pre-calculate # of bytes written per processor in a step before writing anything
   uint64_t groupTotalSize; // ADIOS buffer size returned by adios_group_size(), valid only if size is > default 16MB ADIOS buffer
   char *filecurrent;  // name of file for this round (with % and * replaced)
+  char **columnNames; // list of column names for the atom table (individual list of 'columns' string)
 
   virtual void openfile();
   virtual void write();
@@ -63,5 +63,31 @@ E: Too much per-proc info for dump
 
 Number of local atoms times number of columns must fit in a 32-bit
 integer for dump.
+
+E: Dump_modify format string is too short
+
+There are more fields to be dumped in a line of output than your
+format string specifies.
+
+E: Could not find dump custom compute ID
+
+Self-explanatory.
+
+E: Could not find dump custom fix ID
+
+Self-explanatory.
+
+E: Dump custom and fix not computed at compatible times
+
+The fix must produce per-atom quantities on timesteps that dump custom
+needs them.
+
+E: Could not find dump custom variable name
+
+Self-explanatory.
+
+E: Region ID for dump custom does not exist
+
+Self-explanatory.
 
 */

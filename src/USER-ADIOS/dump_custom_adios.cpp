@@ -12,18 +12,27 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing author: Norbert Podhorszki (ORNL)
+   Contributing author: Paul Coffman (IBM)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
-#include "dump_atom_adios.h"
-#include "domain.h"
+#include "dump_custom_adios.h"
 #include "atom.h"
-#include "update.h"
+#include "force.h"
+#include "domain.h"
+#include "region.h"
 #include "group.h"
+#include "input.h"
+#include "variable.h"
+#include "update.h"
+#include "modify.h"
+#include "compute.h"
+#include "fix.h"
 #include "memory.h"
 #include "error.h"
-
+#include <stdlib.h>
 
 using namespace LAMMPS_NS;
 
@@ -31,29 +40,51 @@ using namespace LAMMPS_NS;
 #define DUMP_BUF_CHUNK_SIZE 16384
 #define DUMP_BUF_INCREMENT_SIZE 4096
 
-const char * DumpAtomADIOS::groupname = "atom";   // adios needs a group of variables and a group name
+enum{ID,MOL,TYPE,ELEMENT,MASS,
+     X,Y,Z,XS,YS,ZS,XSTRI,YSTRI,ZSTRI,XU,YU,ZU,XUTRI,YUTRI,ZUTRI,
+     XSU,YSU,ZSU,XSUTRI,YSUTRI,ZSUTRI,
+     IX,IY,IZ,
+     VX,VY,VZ,FX,FY,FZ,
+     Q,MUX,MUY,MUZ,MU,RADIUS,DIAMETER,
+     OMEGAX,OMEGAY,OMEGAZ,ANGMOMX,ANGMOMY,ANGMOMZ,
+     TQX,TQY,TQZ,SPIN,ERADIUS,ERVEL,ERFORCE,
+     COMPUTE,FIX,VARIABLE};
+enum{LT,LE,GT,GE,EQ,NEQ};
+enum{INT,DOUBLE,STRING,BIGINT};    // same as in DumpCustom
+
+const char * DumpCustomADIOS::groupname = "custom";   // adios needs a group of variables and a group name
 /* ---------------------------------------------------------------------- */
 
-DumpAtomADIOS::DumpAtomADIOS(LAMMPS *lmp, int narg, char **arg) :
-  DumpAtom(lmp, narg, arg)
+DumpCustomADIOS::DumpCustomADIOS(LAMMPS *lmp, int narg, char **arg) :
+  DumpCustom(lmp, narg, arg)
 {
     fh = 0;
     gh = 0;
     groupsize = 0;
     groupTotalSize = 0;
     filecurrent = NULL;
+    //if (screen) fprintf(screen, "DumpCustomADIOS constructor: nvariable=%d id_variable=%p, variables=%p, nfield=%d, earg=%p\n", nvariable, id_variable, variable, nfield, earg);
+    columnNames = new char*[nfield];
+    for (int i = 0; i < nfield; ++i) {
+        columnNames[i] = strndup(earg[i], 128);
+        //if (screen) fprintf(screen, "earg[%d] = '%s'\n", i, earg[i]);
+    }
 }
 
 /* ---------------------------------------------------------------------- */
 
-DumpAtomADIOS::~DumpAtomADIOS()
+DumpCustomADIOS::~DumpCustomADIOS()
 {
     adios_free_group(gh);
+    for (int i = 0; i < size_one; ++i) {
+        delete [] columnNames[i];
+    }
+    delete [] columnNames;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void DumpAtomADIOS::openfile()
+void DumpCustomADIOS::openfile()
 {
     // if one file per timestep, replace '*' with current timestep
     filecurrent = filename;
@@ -90,7 +121,7 @@ void DumpAtomADIOS::openfile()
 
 /* ---------------------------------------------------------------------- */
 
-void DumpAtomADIOS::write()
+void DumpCustomADIOS::write()
 {
     if (domain->triclinic == 0) {
         boxxlo = domain->boxlo[0];
@@ -125,12 +156,15 @@ void DumpAtomADIOS::write()
     MPI_Scan (&bnme, &atomOffset, 1, MPI_LMP_BIGINT, MPI_SUM, world);
     atomOffset -= nme; // exclusive prefix sum needed
 
-    // insure buf is sized for packing
-    // adios does not limit per-process data size so nme*size_one is not constrained to int
+    // insure filewriter proc can receive everyone's info
+    // limit nmax*size_one to int since used as arg in MPI_Rsend() below
+    // pack my data into buf
     // if sorting on IDs also request ID list from pack()
     // sort buf as needed
 
     if (nme > maxbuf) {
+        if ((bigint) nme * size_one > MAXSMALLINT)
+            error->all(FLERR,"Too much per-proc info for dump");
         maxbuf = nme;
         memory->destroy(buf);
         memory->create(buf,(maxbuf*size_one),"dump:buf");
@@ -156,6 +190,7 @@ void DumpAtomADIOS::write()
     }
 
     openfile();
+
     // write info on data as scalars (by me==0)
     if (me == 0) {
         adios_write (fh, "ntimestep",   &update->ntimestep);
@@ -188,10 +223,8 @@ void DumpAtomADIOS::write()
 
 /* ---------------------------------------------------------------------- */
 
-void DumpAtomADIOS::init_style()
+void DumpCustomADIOS::init_style()
 {
-    if (image_flag == 0) size_one = 5;
-    else size_one = 8;
 
     // setup boundary string
 
@@ -208,31 +241,42 @@ void DumpAtomADIOS::init_style()
         strncpy(filename,s,len);
     }
 
-    // setup column string
+    /* The next four loops are copied from dump_custom_mpiio, but nothing is done with them.
+     * It is unclear why we need them here.
+     * For metadata, variable[] will be written out as an ADIOS attribute if nvariable>0
+     */
+    // find current ptr for each compute,fix,variable
+    // check that fix frequency is acceptable
+    int icompute;
+    for (int i = 0; i < ncompute; i++) {
+        icompute = modify->find_compute(id_compute[i]);
+        if (icompute < 0) error->all(FLERR,"Could not find dump custom compute ID");
+        compute[i] = modify->compute[icompute];
+    }
 
-    if (scale_flag == 0 && image_flag == 0)
-        columns = (char *) "id type x y z";
-    else if (scale_flag == 0 && image_flag == 1)
-        columns = (char *) "id type x y z ix iy iz";
-    else if (scale_flag == 1 && image_flag == 0)
-        columns = (char *) "id type xs ys zs";
-    else if (scale_flag == 1 && image_flag == 1)
-        columns = (char *) "id type xs ys zs ix iy iz";
+    int ifix;
+    for (int i = 0; i < nfix; i++) {
+        ifix = modify->find_fix(id_fix[i]);
+        if (ifix < 0) error->all(FLERR,"Could not find dump custom fix ID");
+        fix[i] = modify->fix[ifix];
+        if (nevery % modify->fix[ifix]->peratom_freq)
+            error->all(FLERR,"Dump custom and fix not computed at compatible times");
+    }
 
-    // setup function ptrs
+    int ivariable;
+    for (int i = 0; i < nvariable; i++) {
+        ivariable = input->variable->find(id_variable[i]);
+        if (ivariable < 0)
+            error->all(FLERR,"Could not find dump custom variable name");
+        variable[i] = ivariable;
+    }
 
-    if (scale_flag == 1 && image_flag == 0 && domain->triclinic == 0)
-        pack_choice = &DumpAtomADIOS::pack_scale_noimage;
-    else if (scale_flag == 1 && image_flag == 1 && domain->triclinic == 0)
-        pack_choice = &DumpAtomADIOS::pack_scale_image;
-    else if (scale_flag == 1 && image_flag == 0 && domain->triclinic == 1)
-        pack_choice = &DumpAtomADIOS::pack_scale_noimage_triclinic;
-    else if (scale_flag == 1 && image_flag == 1 && domain->triclinic == 1)
-        pack_choice = &DumpAtomADIOS::pack_scale_image_triclinic;
-    else if (scale_flag == 0 && image_flag == 0)
-        pack_choice = &DumpAtomADIOS::pack_noscale_noimage;
-    else if (scale_flag == 0 && image_flag == 1)
-        pack_choice = &DumpAtomADIOS::pack_noscale_image;
+    // set index and check validity of region
+    if (iregion >= 0) {
+        iregion = domain->find_region(idregion);
+        if (iregion == -1)
+            error->all(FLERR,"Region ID for dump custom does not exist");
+    }
 
     /* Define the group of variables for the atom style here since it's a fixed set */
     adios_declare_group(&gh, groupname, NULL, adios_flag_yes);
@@ -267,15 +311,20 @@ void DumpAtomADIOS::init_style()
     adios_define_var (gh, "boxyz","",  adios_double, NULL, NULL, NULL);
 
     adios_define_attribute_byvalue (gh, "triclinic", "",  adios_integer, 1,  &domain->triclinic);
-    adios_define_attribute_byvalue (gh, "scaled", "",     adios_integer, 1,  &scale_flag);
-    adios_define_attribute_byvalue (gh, "image", "",      adios_integer, 1,  &image_flag);
     adios_define_attribute_byvalue (gh, "boundary", "",   adios_integer, 6, domain->boundary);
+    adios_define_attribute_byvalue (gh, "columns", "",  adios_string_array, size_one, columnNames);
+    //if (screen) fprintf(screen, "ADIOS nvariable=%d id_variable=%p, variables=%p, nfield=%d, earg=%p\n", nvariable, id_variable, variable, nfield, earg);
+    if (nvariable) {
+        adios_define_attribute_byvalue (gh, "variable_names", "",  adios_string_array, nvariable, id_variable);
+        adios_define_attribute_byvalue (gh, "variable_ids", "",    adios_integer, nvariable, variable);
+    }
 
-    adios_define_attribute (gh, "columns", "",    adios_string, columns, NULL);
+    adios_define_attribute (gh, "columnstr", "",    adios_string, columns, NULL);
     adios_define_attribute (gh, "boundarystr", "", adios_string, boundstr, NULL);
-    adios_define_attribute (gh, "LAMMPS/dump_style", "", adios_string, "atom", NULL);
+    adios_define_attribute (gh, "LAMMPS/dump_style", "", adios_string, "custom", NULL);
 
     adios_define_var (gh, "nme","",    adios_long, NULL, NULL, NULL); // local dimension variable
     adios_define_var (gh, "offset","", adios_long, NULL, NULL, NULL); // local dimension variable
     adios_define_var (gh, "atoms","",  adios_double, "nme,ncolumns", "natoms,ncolumns", "offset,0");
+
 }
