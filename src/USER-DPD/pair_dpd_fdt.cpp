@@ -15,10 +15,10 @@
    Contributing author: James Larentzos (U.S. Army Research Laboratory)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "atom.h"
 #include "atom_vec.h"
 #include "comm.h"
@@ -43,6 +43,8 @@ using namespace LAMMPS_NS;
 PairDPDfdt::PairDPDfdt(LAMMPS *lmp) : Pair(lmp)
 {
   random = NULL;
+  splitFDT_flag = false;
+  a0_is_zero = false;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -68,19 +70,23 @@ void PairDPDfdt::compute(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
-  double rsq,r,rinv,wd,wr,factor_dpd;
+  double vxtmp,vytmp,vztmp,delvx,delvy,delvz;
+  double rsq,r,rinv,dot,wd,wr,randnum,factor_dpd;
   int *ilist,*jlist,*numneigh,**firstneigh;
+  double gamma_ij;
 
   evdwl = 0.0;
   if (eflag || vflag) ev_setup(eflag,vflag);
   else evflag = vflag_fdotr = 0;
 
   double **x = atom->x;
+  double **v = atom->v;
   double **f = atom->f;
   int *type = atom->type;
   int nlocal = atom->nlocal;
   double *special_lj = force->special_lj;
   int newton_pair = force->newton_pair;
+  double dtinvsqrt = 1.0/sqrt(update->dt);
 
   inum = list->inum;
   ilist = list->ilist;
@@ -89,60 +95,130 @@ void PairDPDfdt::compute(int eflag, int vflag)
 
   // loop over neighbors of my atoms
 
-  for (ii = 0; ii < inum; ii++) {
-    i = ilist[ii];
-    xtmp = x[i][0];
-    ytmp = x[i][1];
-    ztmp = x[i][2];
-    itype = type[i];
-    jlist = firstneigh[i];
-    jnum = numneigh[i];
+  if (splitFDT_flag) {
+    if (!a0_is_zero) for (ii = 0; ii < inum; ii++) {
+      i = ilist[ii];
+      xtmp = x[i][0];
+      ytmp = x[i][1];
+      ztmp = x[i][2];
+      itype = type[i];
+      jlist = firstneigh[i];
+      jnum = numneigh[i];
 
-    for (jj = 0; jj < jnum; jj++) {
-      j = jlist[jj];
-      factor_dpd = special_lj[sbmask(j)];
-      j &= NEIGHMASK;
+      for (jj = 0; jj < jnum; jj++) {
+        j = jlist[jj];
+        factor_dpd = special_lj[sbmask(j)];
+        j &= NEIGHMASK;
 
-      delx = xtmp - x[j][0];
-      dely = ytmp - x[j][1];
-      delz = ztmp - x[j][2];
-      rsq = delx*delx + dely*dely + delz*delz;
-      jtype = type[j];
+        delx = xtmp - x[j][0];
+        dely = ytmp - x[j][1];
+        delz = ztmp - x[j][2];
+        rsq = delx*delx + dely*dely + delz*delz;
+        jtype = type[j];
 
-      if (rsq < cutsq[itype][jtype]) {
-        r = sqrt(rsq);
-        if (r < EPSILON) continue;     // r can be 0.0 in DPD systems
-        rinv = 1.0/r;
-        wr = 1.0 - r/cut[itype][jtype];
-        wd = wr*wr;
+        if (rsq < cutsq[itype][jtype]) {
+          r = sqrt(rsq);
+          if (r < EPSILON) continue;     // r can be 0.0 in DPD systems
+          rinv = 1.0/r;
+          wr = 1.0 - r/cut[itype][jtype];
+          wd = wr*wr;
 
-        // conservative force = a0 * wr
-        fpair = a0[itype][jtype]*wr;
-        fpair *= factor_dpd*rinv;
+          // conservative force = a0 * wr
+          fpair = a0[itype][jtype]*wr;
+          fpair *= factor_dpd*rinv;
 
-        f[i][0] += delx*fpair;
-        f[i][1] += dely*fpair;
-        f[i][2] += delz*fpair;
-        if (newton_pair || j < nlocal) {
-          f[j][0] -= delx*fpair;
-          f[j][1] -= dely*fpair;
-          f[j][2] -= delz*fpair;
+          f[i][0] += delx*fpair;
+          f[i][1] += dely*fpair;
+          f[i][2] += delz*fpair;
+          if (newton_pair || j < nlocal) {
+            f[j][0] -= delx*fpair;
+            f[j][1] -= dely*fpair;
+            f[j][2] -= delz*fpair;
+          }
+
+          if (eflag) {
+            // unshifted eng of conservative term:
+            // evdwl = -a0[itype][jtype]*r * (1.0-0.5*r/cut[itype][jtype]);
+            // eng shifted to 0.0 at cutoff
+            evdwl = 0.5*a0[itype][jtype]*cut[itype][jtype] * wd;
+            evdwl *= factor_dpd;
+          }
+
+          if (evflag) ev_tally(i,j,nlocal,newton_pair,
+                               evdwl,0.0,fpair,delx,dely,delz);
         }
+      }
+    }
+  } else {
+    for (ii = 0; ii < inum; ii++) {
+      i = ilist[ii];
+      xtmp = x[i][0];
+      ytmp = x[i][1];
+      ztmp = x[i][2];
+      vxtmp = v[i][0];
+      vytmp = v[i][1];
+      vztmp = v[i][2];
+      itype = type[i];
+      jlist = firstneigh[i];
+      jnum = numneigh[i];
 
-        if (eflag) {
-          // unshifted eng of conservative term:
-          // evdwl = -a0[itype][jtype]*r * (1.0-0.5*r/cut[itype][jtype]);
-          // eng shifted to 0.0 at cutoff
-          evdwl = 0.5*a0[itype][jtype]*cut[itype][jtype] * wd;
-          evdwl *= factor_dpd;
+      for (jj = 0; jj < jnum; jj++) {
+        j = jlist[jj];
+        factor_dpd = special_lj[sbmask(j)];
+        j &= NEIGHMASK;
+
+        delx = xtmp - x[j][0];
+        dely = ytmp - x[j][1];
+        delz = ztmp - x[j][2];
+        rsq = delx*delx + dely*dely + delz*delz;
+        jtype = type[j];
+
+        if (rsq < cutsq[itype][jtype]) {
+          r = sqrt(rsq);
+          if (r < EPSILON) continue;     // r can be 0.0 in DPD systems
+          rinv = 1.0/r;
+          delvx = vxtmp - v[j][0];
+          delvy = vytmp - v[j][1];
+          delvz = vztmp - v[j][2];
+          dot = delx*delvx + dely*delvy + delz*delvz;
+          wr = 1.0 - r/cut[itype][jtype];
+          wd = wr*wr;
+          randnum = random->gaussian();
+          gamma_ij = sigma[itype][jtype]*sigma[itype][jtype]
+                     / (2.0*force->boltz*temperature);
+
+          // conservative force = a0 * wd
+          // drag force = -gamma * wd^2 * (delx dot delv) / r
+          // random force = sigma * wd * rnd * dtinvsqrt;
+
+          fpair = a0[itype][jtype]*wr;
+          fpair -= gamma_ij*wd*dot*rinv;
+          fpair += sigma[itype][jtype]*wr*randnum*dtinvsqrt;
+          fpair *= factor_dpd*rinv;
+
+          f[i][0] += delx*fpair;
+          f[i][1] += dely*fpair;
+          f[i][2] += delz*fpair;
+          if (newton_pair || j < nlocal) {
+            f[j][0] -= delx*fpair;
+            f[j][1] -= dely*fpair;
+            f[j][2] -= delz*fpair;
+          }
+
+          if (eflag) {
+            // unshifted eng of conservative term:
+            // evdwl = -a0[itype][jtype]*r * (1.0-0.5*r/cut[itype][jtype]);
+            // eng shifted to 0.0 at cutoff
+            evdwl = 0.5*a0[itype][jtype]*cut[itype][jtype] * wd;
+            evdwl *= factor_dpd;
+          }
+
+          if (evflag) ev_tally(i,j,nlocal,newton_pair,
+                               evdwl,0.0,fpair,delx,dely,delz);
         }
-
-        if (evflag) ev_tally(i,j,nlocal,newton_pair,
-                             evdwl,0.0,fpair,delx,dely,delz);
       }
     }
   }
-
   if (vflag_fdotr) virial_fdotr_compute();
 }
 
@@ -191,7 +267,7 @@ void PairDPDfdt::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
+      for (j = i; j <= atom->ntypes; j++)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 }
@@ -206,12 +282,14 @@ void PairDPDfdt::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double a0_one = force->numeric(FLERR,arg[2]);
   double sigma_one = force->numeric(FLERR,arg[3]);
   double cut_one = cut_global;
+
+  a0_is_zero = (a0_one == 0.0); // Typical use with SSA is to set a0 to zero
 
   if (narg == 5) cut_one = force->numeric(FLERR,arg[4]);
 
@@ -238,17 +316,17 @@ void PairDPDfdt::init_style()
   if (comm->ghost_velocity == 0)
     error->all(FLERR,"Pair dpd/fdt requires ghost atoms store velocity");
 
-  // if newton off, forces between atoms ij will be double computed
-  // using different random numbers
-
-  if (force->newton_pair == 0 && comm->me == 0) error->warning(FLERR,
-      "Pair dpd/fdt requires newton pair on");
-
+  splitFDT_flag = false;
   int irequest = neighbor->request(this,instance_me);
-  neighbor->requests[irequest]->ssa = 0;
   for (int i = 0; i < modify->nfix; i++)
-    if (strcmp(modify->fix[i]->style,"shardlow") == 0)
-      neighbor->requests[irequest]->ssa = 1;
+    if (strncmp(modify->fix[i]->style,"shardlow", 8) == 0){
+      splitFDT_flag = true;
+    }
+
+  // if newton off, forces between atoms ij will be double computed
+  // using different random numbers if splitFDT_flag is false
+  if (!splitFDT_flag && (force->newton_pair == 0) && (comm->me == 0)) error->warning(FLERR,
+      "Pair dpd/fdt requires newton pair on if not also using fix shardlow");
 }
 
 /* ----------------------------------------------------------------------
@@ -296,6 +374,7 @@ void PairDPDfdt::read_restart(FILE *fp)
 
   allocate();
 
+  a0_is_zero = true; // start with assumption that a0 is zero
   int i,j;
   int me = comm->me;
   for (i = 1; i <= atom->ntypes; i++)
@@ -311,6 +390,7 @@ void PairDPDfdt::read_restart(FILE *fp)
         MPI_Bcast(&a0[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&sigma[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&cut[i][j],1,MPI_DOUBLE,0,world);
+        a0_is_zero = a0_is_zero && (a0[i][j] == 0.0); // verify the zero assumption
       }
     }
 }
@@ -353,8 +433,8 @@ void PairDPDfdt::read_restart_settings(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double PairDPDfdt::single(int i, int j, int itype, int jtype, double rsq,
-                       double factor_coul, double factor_dpd, double &fforce)
+double PairDPDfdt::single(int /*i*/, int /*j*/, int itype, int jtype, double rsq,
+                       double /*factor_coul*/, double factor_dpd, double &fforce)
 {
   double r,rinv,wr,wd,phi;
 

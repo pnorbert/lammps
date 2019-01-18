@@ -12,9 +12,10 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <string.h>
-#include <stdio.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <cstdio>
 #include "finish.h"
 #include "timer.h"
 #include "universe.h"
@@ -33,6 +34,7 @@
 #include "neigh_request.h"
 #include "output.h"
 #include "memory.h"
+#include "error.h"
 
 #ifdef LMP_USER_OMP
 #include "modify.h"
@@ -63,7 +65,8 @@ void Finish::end(int flag)
 {
   int i,m,nneigh,nneighfull;
   int histo[10];
-  int minflag,prdflag,tadflag,timeflag,fftflag,histoflag,neighflag;
+  int minflag,prdflag,tadflag,hyperflag;
+  int timeflag,fftflag,histoflag,neighflag;
   double time,tmp,ave,max,min;
   double time_loop,time_other,cpu_loop;
 
@@ -84,9 +87,11 @@ void Finish::end(int flag)
   // flag = 1 = dynamics or minimization
   // flag = 2 = PRD
   // flag = 3 = TAD
+  // flag = 4 = HYPER
   // turn off neighflag for Kspace partition of verlet/split integrator
 
-  minflag = prdflag = tadflag = timeflag = fftflag = histoflag = neighflag = 0;
+  minflag = prdflag = tadflag = hyperflag = 0;
+  timeflag = fftflag = histoflag = neighflag = 0;
   time_loop = cpu_loop = time_other = 0.0;
 
   if (flag == 1) {
@@ -101,6 +106,7 @@ void Finish::end(int flag)
   }
   if (flag == 2) prdflag = timeflag = histoflag = neighflag = 1;
   if (flag == 3) tadflag = histoflag = neighflag = 1;
+  if (flag == 4) hyperflag = timeflag = histoflag = neighflag = 1;
 
   // loop stats
 
@@ -144,6 +150,14 @@ void Finish::end(int flag)
           const char perf[] = "Performance: %.3f tau/day, %.3f timesteps/s\n";
           if (screen) fprintf(screen,perf,tau_day,step_t);
           if (logfile) fprintf(logfile,perf,tau_day,step_t);
+        } else if (strcmp(update->unit_style,"electron") == 0) {
+          double hrs_fs = t_step / update->dt * one_fs / 3600.0;
+          double fs_day = 24.0*3600.0 / t_step * update->dt / one_fs;
+          const char perf[] =
+            "Performance: %.3f fs/day, %.3f hours/fs, %.3f timesteps/s\n";
+          if (screen) fprintf(screen,perf,fs_day,hrs_fs,step_t);
+          if (logfile) fprintf(logfile,perf,fs_day,hrs_fs,step_t);
+
         } else {
           double hrs_ns = t_step / update->dt * 1000000.0 * one_fs / 3600.0;
           double ns_day = 24.0*3600.0 / t_step * update->dt / one_fs/1000000.0;
@@ -156,18 +170,28 @@ void Finish::end(int flag)
 
       // CPU use on MPI tasks and OpenMP threads
 
-#ifdef LMP_USER_OMP
-      const char fmt2[] =
-        "%.1f%% CPU use with %d MPI tasks x %d OpenMP threads\n";
-      if (screen) fprintf(screen,fmt2,cpu_loop,nprocs,nthreads);
-      if (logfile) fprintf(logfile,fmt2,cpu_loop,nprocs,nthreads);
+      if (timeflag) {
+        if (lmp->kokkos) {
+          const char fmt2[] =
+            "%.1f%% CPU use with %d MPI tasks x %d OpenMP threads\n";
+          if (screen) fprintf(screen,fmt2,cpu_loop,nprocs,
+                              lmp->kokkos->num_threads);
+          if (logfile) fprintf(logfile,fmt2,cpu_loop,nprocs,
+                               lmp->kokkos->num_threads);
+        } else {
+#if defined(_OPENMP)
+          const char fmt2[] =
+            "%.1f%% CPU use with %d MPI tasks x %d OpenMP threads\n";
+          if (screen) fprintf(screen,fmt2,cpu_loop,nprocs,nthreads);
+          if (logfile) fprintf(logfile,fmt2,cpu_loop,nprocs,nthreads);
 #else
-      const char fmt2[] =
-        "%.1f%% CPU use with %d MPI tasks x no OpenMP threads\n";
-      if (screen) fprintf(screen,fmt2,cpu_loop,nprocs);
-      if (logfile) fprintf(logfile,fmt2,cpu_loop,nprocs);
+          const char fmt2[] =
+            "%.1f%% CPU use with %d MPI tasks x no OpenMP threads\n";
+          if (screen) fprintf(screen,fmt2,cpu_loop,nprocs);
+          if (logfile) fprintf(logfile,fmt2,cpu_loop,nprocs);
 #endif
-
+        }
+      }
     }
   }
 
@@ -233,16 +257,13 @@ void Finish::end(int flag)
     }
   }
 
-  // PRD stats using PAIR,BOND,KSPACE for dephase,dynamics,quench
+  // PRD stats
 
   if (prdflag) {
     if (me == 0) {
-      if (screen) fprintf(screen,"\n");
-      if (logfile) fprintf(logfile,"\n");
+      if (screen) fprintf(screen,"\nPRD stats:\n");
+      if (logfile) fprintf(logfile,"\nPRD stats:\n");
     }
-
-    if (screen) fprintf(screen,"PRD stats:\n");
-    if (logfile) fprintf(logfile,"PRD stats:\n");
 
     time = timer->get_wall(Timer::DEPHASE);
     MPI_Allreduce(&time,&tmp,1,MPI_DOUBLE,MPI_SUM,world);
@@ -318,7 +339,7 @@ void Finish::end(int flag)
     }
   }
 
-  // TAD stats using PAIR,BOND,KSPACE for neb,dynamics,quench
+  // TAD stats
 
   if (tadflag) {
     if (me == 0) {
@@ -404,12 +425,61 @@ void Finish::end(int flag)
     }
   }
 
+  // HYPER stats
+
+  if (hyperflag) {
+    if (me == 0) {
+      if (screen) fprintf(screen,"\nHyper stats:\n");
+      if (logfile) fprintf(logfile,"\nHyper stats:\n");
+    }
+
+    time = timer->get_wall(Timer::DYNAMICS);
+    MPI_Allreduce(&time,&tmp,1,MPI_DOUBLE,MPI_SUM,world);
+    time = tmp/nprocs;
+    if (me == 0) {
+      if (screen)
+        fprintf(screen,"  Dynamics time (%%) = %g (%g)\n",
+                time,time/time_loop*100.0);
+      if (logfile)
+        fprintf(logfile,"  Dynamics time (%%) = %g (%g)\n",
+                time,time/time_loop*100.0);
+    }
+
+    time = timer->get_wall(Timer::QUENCH);
+    MPI_Allreduce(&time,&tmp,1,MPI_DOUBLE,MPI_SUM,world);
+    time = tmp/nprocs;
+    if (me == 0) {
+      if (screen)
+        fprintf(screen,"  Quench   time (%%) = %g (%g)\n",
+                time,time/time_loop*100.0);
+      if (logfile)
+        fprintf(logfile,"  Quench   time (%%) = %g (%g)\n",
+                time,time/time_loop*100.0);
+    }
+
+    time = time_other;
+    MPI_Allreduce(&time,&tmp,1,MPI_DOUBLE,MPI_SUM,world);
+    time = tmp/nprocs;
+    if (me == 0) {
+      if (screen)
+        fprintf(screen,"  Other    time (%%) = %g (%g)\n",
+                time,time/time_loop*100.0);
+      if (logfile)
+        fprintf(logfile,"  Other    time (%%) = %g (%g)\n",
+                time,time/time_loop*100.0);
+    }
+  }
+
+  // further timing breakdowns
+
   if (timeflag && timer->has_normal()) {
 
     if (timer->has_full()) {
       const char hdr[] = "\nMPI task timing breakdown:\n"
-        "Section |  min time  |  avg time  |  max time  |%varavg|  %CPU | %total\n"
-        "-----------------------------------------------------------------------\n";
+        "Section |  min time  |  avg time  |  max time  "
+        "|%varavg|  %CPU | %total\n"
+        "-----------------------------------------------"
+        "------------------------\n";
       if (me == 0) {
         if (screen)  fputs(hdr,screen);
         if (logfile) fputs(hdr,logfile);
@@ -507,6 +577,15 @@ void Finish::end(int flag)
     }
   }
 #endif
+
+  if (lmp->kokkos && lmp->kokkos->ngpu > 0)
+    if (const char* env_clb = getenv("CUDA_LAUNCH_BLOCKING"))
+      if (!(strcmp(env_clb,"1") == 0)) {
+        error->warning(FLERR,"Timing breakdown may not be accurate "
+                       "since GPU/CPU overlap is enabled\n"
+                       "Using 'export CUDA_LAUNCH_BLOCKING=1' will give an "
+                       "accurate timing breakdown but will reduce performance");
+      }
 
   // FFT timing statistics
   // time3d,time1d = total time during run for 3d and 1d FFTs
@@ -617,22 +696,14 @@ void Finish::end(int flag)
     // count neighbors in that list for stats purposes
     // allow it to be Kokkos neigh list as well
 
-    for (m = 0; m < neighbor->old_nrequest; m++) {
-      if ((neighbor->old_requests[m]->half ||
-           neighbor->old_requests[m]->gran ||
-           neighbor->old_requests[m]->respaouter ||
-           neighbor->old_requests[m]->half_from_full) &&
+    for (m = 0; m < neighbor->old_nrequest; m++)
+      if (neighbor->old_requests[m]->half &&
           neighbor->old_requests[m]->skip == 0 &&
-          neighbor->lists[m] && neighbor->lists[m]->numneigh) {
-        if (!neighbor->lists[m] && lmp->kokkos &&
-            lmp->kokkos->neigh_list_kokkos(m)) break;
-        else break;
-      }
-    }
+          neighbor->lists[m] && neighbor->lists[m]->numneigh) break;
 
     nneigh = 0;
     if (m < neighbor->old_nrequest) {
-      if (neighbor->lists[m]) {
+      if (!neighbor->lists[m]->kokkos) {
         int inum = neighbor->lists[m]->inum;
         int *ilist = neighbor->lists[m]->ilist;
         int *numneigh = neighbor->lists[m]->numneigh;
@@ -662,23 +733,19 @@ void Finish::end(int flag)
     // count neighbors in that list for stats purposes
     // allow it to be Kokkos neigh list as well
 
-    for (m = 0; m < neighbor->old_nrequest; m++) {
+    for (m = 0; m < neighbor->old_nrequest; m++)
       if (neighbor->old_requests[m]->full &&
-          neighbor->old_requests[m]->skip == 0) {
-        if (lmp->kokkos && lmp->kokkos->neigh_list_kokkos(m)) break;
-        else break;
-      }
-    }
+          neighbor->old_requests[m]->skip == 0) break;
 
     nneighfull = 0;
     if (m < neighbor->old_nrequest) {
-      if (neighbor->lists[m] && neighbor->lists[m]->numneigh) {
+      if (!neighbor->lists[m]->kokkos && neighbor->lists[m]->numneigh) {
         int inum = neighbor->lists[m]->inum;
         int *ilist = neighbor->lists[m]->ilist;
         int *numneigh = neighbor->lists[m]->numneigh;
         for (i = 0; i < inum; i++)
           nneighfull += numneigh[ilist[i]];
-      } else if (!neighbor->lists[m] && lmp->kokkos)
+      } else if (lmp->kokkos)
           nneighfull = lmp->kokkos->neigh_count(m);
 
       tmp = nneighfull;
@@ -852,7 +919,7 @@ void mpi_timings(const char *label, Timer *t, enum Timer::ttype tt,
   time_cpu = tmp/nprocs*100.0;
 
   // % variance from the average as measure of load imbalance
-  if (time > 1.0e-10)
+  if ((time > 0.001) && ((time_sq/time - time) > 1.0e-10))
     time_sq = sqrt(time_sq/time - time)*100.0;
   else
     time_sq = 0.0;
@@ -904,7 +971,7 @@ void omp_times(FixOMP *fix, const char *label, enum Timer::ttype which,
   time_std /= nthreads;
   time_total /= nthreads;
 
-  if (time_avg > 1.0e-10)
+  if ((time_avg > 0.001) && ((time_std/time_avg -time_avg) > 1.0e-10))
     time_std = sqrt(time_std/time_avg - time_avg)*100.0;
   else
     time_std = 0.0;

@@ -15,9 +15,9 @@
    Contributing author: Jonathan Zimmerman (Sandia)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include "pair_lj_smooth_linear.h"
 #include "atom.h"
 #include "comm.h"
@@ -175,7 +175,7 @@ void PairLJSmoothLinear::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
+      for (j = i; j <= atom->ntypes; j++)
         if (setflag[i][j])
           cut[i][j] = cut_global;
   }
@@ -192,8 +192,8 @@ void PairLJSmoothLinear::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double epsilon_one = force->numeric(FLERR,arg[2]);
   double sigma_one = force->numeric(FLERR,arg[3]);
@@ -326,9 +326,9 @@ void PairLJSmoothLinear::read_restart_settings(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double PairLJSmoothLinear::single(int i, int j, int itype, int jtype,
+double PairLJSmoothLinear::single(int /*i*/, int /*j*/, int itype, int jtype,
                                   double rsq,
-                                  double factor_coul, double factor_lj,
+                                  double /*factor_coul*/, double factor_lj,
                                   double &fforce)
 {
   double r2inv,r6inv,forcelj,philj,r,rinv;

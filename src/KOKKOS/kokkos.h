@@ -16,6 +16,7 @@
 
 #include "pointers.h"
 #include "kokkos_type.h"
+#include "pair_kokkos.h"
 
 namespace LAMMPS_NS {
 
@@ -23,18 +24,35 @@ class KokkosLMP : protected Pointers {
  public:
   int kokkos_exists;
   int neighflag;
+  int neighflag_qeq;
+  int neighflag_qeq_set;
   int exchange_comm_classic;
   int forward_comm_classic;
+  int reverse_comm_classic;
   int exchange_comm_on_host;
   int forward_comm_on_host;
+  int reverse_comm_on_host;
   int num_threads,ngpu;
   int numa;
+  int auto_sync;
+  int gpu_direct_flag;
 
   KokkosLMP(class LAMMPS *, int, char **);
   ~KokkosLMP();
   void accelerator(int, char **);
-  int neigh_list_kokkos(int);
   int neigh_count(int);
+
+  template<class DeviceType>
+  int need_dup()
+  {
+    int value = 0;
+
+    if (neighflag == HALFTHREAD)
+      value = NeedDup<HALFTHREAD,DeviceType>::value;
+
+    return value;
+  }
+
  private:
   static void my_signal_handler(int);
 };
@@ -63,7 +81,7 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
-E: Must use Kokkos half/thread or full neighbor list with threads or GPUs
+U: Must use Kokkos half/thread or full neighbor list with threads or GPUs
 
 Using Kokkos half-neighbor lists with threading is not allowed.
 

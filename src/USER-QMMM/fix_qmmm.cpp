@@ -15,6 +15,8 @@
    Contributing author:  Axel Kohlmeyer (ICTP)
 ------------------------------------------------------------------------- */
 
+#include <cstdlib>
+#include <cstring>
 #include "fix_qmmm.h"
 #include "atom.h"
 #include "domain.h"
@@ -24,9 +26,6 @@
 #include "error.h"
 #include "group.h"
 #include "memory.h"
-
-#include <stdlib.h>
-#include <string.h>
 
 #include "libqmmm.h"
 
@@ -39,10 +38,6 @@ enum {QMMM_TAG_OTHER=0, QMMM_TAG_SIZE=1, QMMM_TAG_COORD=2,
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
-
-// prototypes for local helper functions
-
-static int match_element(double mass, int search_isotopes, double &delta);
 
 /****************************************************************************/
 

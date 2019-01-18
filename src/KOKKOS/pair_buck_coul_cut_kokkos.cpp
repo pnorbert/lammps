@@ -15,10 +15,10 @@
    Contributing author: Ray Shan (SNL)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_buck_coul_cut_kokkos.h"
 #include "kokkos.h"
 #include "atom_kokkos.h"
@@ -31,7 +31,7 @@
 #include "integrate.h"
 #include "respa.h"
 #include "math_const.h"
-#include "memory.h"
+#include "memory_kokkos.h"
 #include "error.h"
 #include "atom_masks.h"
 
@@ -65,8 +65,8 @@ PairBuckCoulCutKokkos<DeviceType>::~PairBuckCoulCutKokkos()
 {
 
   if (!copymode) {
-    memory->destroy_kokkos(k_eatom,eatom);
-    memory->destroy_kokkos(k_vatom,vatom);
+    memoryKK->destroy_kokkos(k_eatom,eatom);
+    memoryKK->destroy_kokkos(k_vatom,vatom);
     k_cutsq = DAT::tdual_ffloat_2d();
     k_cut_ljsq = DAT::tdual_ffloat_2d();
     k_cut_coulsq = DAT::tdual_ffloat_2d();
@@ -90,21 +90,21 @@ void PairBuckCoulCutKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
   eflag = eflag_in;
   vflag = vflag_in;
 
-  if (neighflag == FULL || neighflag == FULLCLUSTER) no_virial_fdotr_compute = 1;
+  if (neighflag == FULL) no_virial_fdotr_compute = 1;
 
-  if (eflag || vflag) ev_setup(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag,0);
   else evflag = vflag_fdotr = 0;
 
   // reallocate per-atom arrays if necessary
 
   if (eflag_atom) {
-    memory->destroy_kokkos(k_eatom,eatom);
-    memory->create_kokkos(k_eatom,eatom,maxeatom,"pair:eatom");
+    memoryKK->destroy_kokkos(k_eatom,eatom);
+    memoryKK->create_kokkos(k_eatom,eatom,maxeatom,"pair:eatom");
     d_eatom = k_eatom.view<DeviceType>();
   }
   if (vflag_atom) {
-    memory->destroy_kokkos(k_vatom,vatom);
-    memory->create_kokkos(k_vatom,vatom,maxvatom,6,"pair:vatom");
+    memoryKK->destroy_kokkos(k_vatom,vatom);
+    memoryKK->create_kokkos(k_vatom,vatom,maxvatom,6,"pair:vatom");
     d_vatom = k_vatom.view<DeviceType>();
   }
 
@@ -154,7 +154,7 @@ void PairBuckCoulCutKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
     virial[5] += ev.v[5];
   }
 
-  if (vflag_fdotr) virial_fdotr_compute();
+  if (vflag_fdotr) pair_virial_fdotr_compute(this);
 
   if (eflag_atom) {
     k_eatom.template modify<DeviceType>();
@@ -252,16 +252,16 @@ void PairBuckCoulCutKokkos<DeviceType>::allocate()
 
   int n = atom->ntypes;
   memory->destroy(cutsq);
-  memory->create_kokkos(k_cutsq,cutsq,n+1,n+1,"pair:cutsq");
+  memoryKK->create_kokkos(k_cutsq,cutsq,n+1,n+1,"pair:cutsq");
   d_cutsq = k_cutsq.template view<DeviceType>();
   memory->destroy(cut_ljsq);
-  memory->create_kokkos(k_cut_ljsq,cut_ljsq,n+1,n+1,"pair:cut_ljsq");
+  memoryKK->create_kokkos(k_cut_ljsq,cut_ljsq,n+1,n+1,"pair:cut_ljsq");
   d_cut_ljsq = k_cut_ljsq.template view<DeviceType>();
   memory->destroy(cut_coulsq);
-  memory->create_kokkos(k_cut_coulsq,cut_coulsq,n+1,n+1,"pair:cut_coulsq");
+  memoryKK->create_kokkos(k_cut_coulsq,cut_coulsq,n+1,n+1,"pair:cut_coulsq");
   d_cut_coulsq = k_cut_coulsq.template view<DeviceType>();
   k_params = Kokkos::DualView<params_buck_coul**,Kokkos::LayoutRight,DeviceType>("PairBuckCoulCut::params",n+1,n+1);
-  params = k_params.d_view;
+  params = k_params.template view<DeviceType>();
 }
 
 /* ----------------------------------------------------------------------
@@ -309,19 +309,12 @@ void PairBuckCoulCutKokkos<DeviceType>::init_style()
   if (neighflag == FULL) {
     neighbor->requests[irequest]->full = 1;
     neighbor->requests[irequest]->half = 0;
-    neighbor->requests[irequest]->full_cluster = 0;
   } else if (neighflag == HALF || neighflag == HALFTHREAD) {
     neighbor->requests[irequest]->full = 0;
     neighbor->requests[irequest]->half = 1;
-    neighbor->requests[irequest]->full_cluster = 0;
   } else if (neighflag == N2) {
-    neighbor->requests[irequest]->full_cluster = 0;
     neighbor->requests[irequest]->full = 0;
     neighbor->requests[irequest]->half = 0;
-  } else if (neighflag == FULLCLUSTER) {
-    neighbor->requests[irequest]->full = 1;
-    neighbor->requests[irequest]->half = 0;
-    neighbor->requests[irequest]->full_cluster = 1;
   } else {
     error->all(FLERR,"Cannot use chosen neighbor list style with buck/coul/cut/kk");
   }

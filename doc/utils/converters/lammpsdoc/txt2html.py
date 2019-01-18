@@ -25,6 +25,7 @@ import re
 import sys
 import argparse
 
+
 class Markup(object):
     BOLD_START = "["
     BOLD_END = "]"
@@ -77,6 +78,7 @@ class Markup(object):
             text = text.replace('\"%s\"_%s' % (name, link), href, 1)
         return text
 
+
 class HTMLMarkup(Markup):
     def __init__(self):
         super().__init__()
@@ -100,6 +102,7 @@ class HTMLMarkup(Markup):
             href = link
 
         return "<A HREF = \"" + href + "\">" + content + "</A>"
+
 
 class Formatting(object):
     UNORDERED_LIST_MODE = "unordered-list"
@@ -435,6 +438,7 @@ class Formatting(object):
 
         return rows
 
+
 class HTMLFormatting(Formatting):
     def __init__(self, markup):
         super().__init__(markup)
@@ -447,6 +451,7 @@ class HTMLFormatting(Formatting):
 
     def raw_html(self, content):
         return content
+
 
 class TxtParser(object):
     def __init__(self):
@@ -518,6 +523,9 @@ class TxtParser(object):
     def last_word(self, text):
         return text.split()[-1]
 
+    def order_commands(self, commands):
+        return list(reversed(commands))
+
     def do_formatting(self, paragraph):
         last_word = self.last_word(paragraph)
         format_str = paragraph[paragraph.rfind(last_word):]
@@ -529,7 +537,7 @@ class TxtParser(object):
 
         commands = [x[0] for x in command_pattern.findall(commands)]
 
-        for command in reversed(commands):
+        for command in self.order_commands(commands):
             paragraph = self.format.convert(command, paragraph, commands)
 
         return paragraph + '\n'
@@ -627,6 +635,7 @@ class TxtParser(object):
 
             i += 1
 
+
 class Txt2Html(TxtParser):
     def __init__(self):
         super().__init__()
@@ -637,6 +646,7 @@ class Txt2Html(TxtParser):
         return line.startswith(".. HTML_ONLY") or \
                line.startswith(".. END_HTML_ONLY") or \
                super().is_paragraph_separator(line)
+
 
 class TxtConverter:
     def get_argument_parser(self):
@@ -652,24 +662,37 @@ class TxtConverter:
         parser = self.get_argument_parser()
         parsed_args = parser.parse_args(args)
 
-        write_to_files = len(parsed_args.files) > 1
+        write_to_files = parsed_args.output_dir or (len(parsed_args.files) > 1)
 
         for filename in parsed_args.files:
             if parsed_args.skip_files and filename in parsed_args.skip_files:
                 continue
 
             with open(filename, 'r') as f:
-                print("Converting", filename, "...", file=err)
+                if parsed_args.verbose:
+                    print("Converting", filename, "...", file=err)
                 content = f.read()
                 converter = self.create_converter(parsed_args)
-                result = converter.convert(content)
+
+                try:
+                    result = converter.convert(content)
+                except Exception as e:
+                    msg = "###########################################################################\n" \
+                          " ERROR: " + e.args[0] + "\n" \
+                          "###########################################################################\n"
+                    print(msg, file=err)
+                    result = msg
 
                 if write_to_files:
-                    output_filename = self.get_output_filename(filename)
+                    if parsed_args.output_dir:
+                        output_filename = os.path.join(parsed_args.output_dir, os.path.basename(self.get_output_filename(filename)))
+                    else:
+                        output_filename = self.get_output_filename(filename)
                     with open(output_filename, "w+t") as outfile:
                         outfile.write(result)
                 else:
                     print(result, end='', file=out)
+
 
 class Txt2HtmlConverter(TxtConverter):
     def get_argument_parser(self):
@@ -679,6 +702,8 @@ class Txt2HtmlConverter(TxtConverter):
                                                                               'HTML file. useful when set of HTML files'
                                                                               ' will be converted to PDF')
         parser.add_argument('-x', metavar='file-to-skip', dest='skip_files', action='append')
+        parser.add_argument('--verbose', '-v', dest='verbose', action='store_true')
+        parser.add_argument('--output-directory', '-o', dest='output_dir')
         parser.add_argument('--generate-title', dest='create_title', action='store_true', help='add HTML head page'
                                                                                                'title based on first '
                                                                                                'h1,h2,h3,h4... element')

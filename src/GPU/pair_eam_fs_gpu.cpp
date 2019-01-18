@@ -15,9 +15,9 @@
    Contributing authors: Trung Dac Nguyen (ORNL), W. Michael Brown (ORNL)
 ------------------------------------------------------------------------- */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_eam_fs_gpu.h"
 #include "atom.h"
 #include "force.h"
@@ -28,6 +28,7 @@
 #include "error.h"
 #include "neigh_request.h"
 #include "gpu_extra.h"
+#include "domain.h"
 
 using namespace LAMMPS_NS;
 
@@ -336,7 +337,7 @@ void PairEAMFSGPU::coeff(int narg, char **arg)
     for (j = i; j <= n; j++) {
       if (map[i] >= 0 && map[j] >= 0) {
         setflag[i][j] = 1;
-        if (i == j) atom->set_mass(i,fs->mass[map[i]]);
+        if (i == j) atom->set_mass(FLERR,i,fs->mass[map[i]]);
         count++;
       }
     }
@@ -363,7 +364,7 @@ void PairEAMFSGPU::read_file(char *filename)
     fptr = force->open_potential(filename);
     if (fptr == NULL) {
       char str[128];
-      sprintf(str,"Cannot open EAM potential file %s",filename);
+      snprintf(str,128,"Cannot open EAM potential file %s",filename);
       error->one(FLERR,str);
     }
   }

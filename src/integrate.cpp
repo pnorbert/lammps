@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
+#include <cstdlib>
 #include "integrate.h"
 #include "update.h"
 #include "force.h"
@@ -24,7 +24,7 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-Integrate::Integrate(LAMMPS *lmp, int narg, char **arg) : Pointers(lmp)
+Integrate::Integrate(LAMMPS *lmp, int /*narg*/, char **/*arg*/) : Pointers(lmp)
 {
   elist_global = elist_atom = NULL;
   vlist_global = vlist_atom = NULL;
@@ -59,9 +59,8 @@ void Integrate::init()
   // in case input script has reset the run or minimize style explicitly
   // e.g. invalid to have kokkos pair style with non-kokkos verlet
   // but OK to have kokkos verlet with non kokkos pair style (just warn)
-  // ditto for USER-CUDA package verlet with their pair, fix, etc
   // making these checks would require all the pair, fix, etc styles have
-  //   cuda, kokkos, intel flags
+  //   kokkos, intel flags
 }
 
 /* ----------------------------------------------------------------------

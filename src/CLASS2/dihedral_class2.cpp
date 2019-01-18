@@ -15,9 +15,9 @@
    Contributing author: Eric Simon (Cray)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <string.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstring>
+#include <cstdlib>
 #include "dihedral_class2.h"
 #include "atom.h"
 #include "neighbor.h"
@@ -46,6 +46,8 @@ DihedralClass2::DihedralClass2(LAMMPS *lmp) : Dihedral(lmp)
 
 DihedralClass2::~DihedralClass2()
 {
+  if (copymode) return;
+
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(setflag_d);
@@ -640,7 +642,7 @@ void DihedralClass2::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->ndihedraltypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->ndihedraltypes,ilo,ihi);
 
   int count = 0;
 
@@ -662,7 +664,7 @@ void DihedralClass2::coeff(int narg, char **arg)
     }
 
   } else if (strcmp(arg[1],"ebt") == 0) {
-    if (narg != 10) 
+    if (narg != 10)
       error->all(FLERR,"Incorrect args for dihedral coefficients");
 
     double f1_1_one = force->numeric(FLERR,arg[2]);
@@ -688,7 +690,7 @@ void DihedralClass2::coeff(int narg, char **arg)
     }
 
   } else if (strcmp(arg[1],"at") == 0) {
-    if (narg != 10) 
+    if (narg != 10)
       error->all(FLERR,"Incorrect args for dihedral coefficients");
 
     double f1_1_one = force->numeric(FLERR,arg[2]);

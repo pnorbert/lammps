@@ -15,7 +15,7 @@
    Contributing author: James Larentzos (U.S. Army Research Laboratory)
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
+#include <cstdlib>
 #include "atom_vec_dpd.h"
 #include "atom.h"
 #include "comm.h"
@@ -488,8 +488,6 @@ int AtomVecDPD::pack_comm_hybrid(int n, int *list, double *buf)
     buf[m++] = uCond[j];
     buf[m++] = uMech[j];
     buf[m++] = uChem[j];
-    buf[m++] = uCG[j];
-    buf[m++] = uCGnew[j];
   }
   return m;
 }
@@ -759,6 +757,8 @@ int AtomVecDPD::unpack_restart(double *buf)
   uCond[nlocal] = buf[m++];
   uMech[nlocal] = buf[m++];
   uChem[nlocal] = buf[m++];
+  uCG[nlocal] = 0.0;
+  uCGnew[nlocal] = 0.0;
 
   double **extra = atom->extra;
   if (atom->nextra_store) {

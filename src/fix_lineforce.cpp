@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <string.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstring>
+#include <cstdlib>
 #include "fix_lineforce.h"
 #include "atom.h"
 #include "update.h"
@@ -29,6 +29,8 @@ using namespace FixConst;
 FixLineForce::FixLineForce(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg)
 {
+  dynamic_group_allow = 1;
+
   if (narg != 6) error->all(FLERR,"Illegal fix lineforce command");
   xdir = force->numeric(FLERR,arg[3]);
   ydir = force->numeric(FLERR,arg[4]);
@@ -78,7 +80,7 @@ void FixLineForce::min_setup(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixLineForce::post_force(int vflag)
+void FixLineForce::post_force(int /*vflag*/)
 {
   double **f = atom->f;
   int *mask = atom->mask;
@@ -96,7 +98,7 @@ void FixLineForce::post_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixLineForce::post_force_respa(int vflag, int ilevel, int iloop)
+void FixLineForce::post_force_respa(int vflag, int /*ilevel*/, int /*iloop*/)
 {
   post_force(vflag);
 }

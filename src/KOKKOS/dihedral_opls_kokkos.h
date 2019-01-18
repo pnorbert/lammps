@@ -39,8 +39,9 @@ class DihedralOPLSKokkos : public DihedralOPLS {
 
   DihedralOPLSKokkos(class LAMMPS *);
   virtual ~DihedralOPLSKokkos();
-  virtual void compute(int, int);
-  virtual void coeff(int, char **);
+  void compute(int, int);
+  void coeff(int, char **);
+  void read_restart(FILE *);
 
   template<int NEWTON_BOND, int EVFLAG>
   KOKKOS_INLINE_FUNCTION
@@ -68,8 +69,8 @@ class DihedralOPLSKokkos : public DihedralOPLS {
 
   DAT::tdual_efloat_1d k_eatom;
   DAT::tdual_virial_array k_vatom;
-  DAT::t_efloat_1d d_eatom;
-  DAT::t_virial_array d_vatom;
+  typename ArrayTypes<DeviceType>::t_efloat_1d d_eatom;
+  typename ArrayTypes<DeviceType>::t_virial_array d_vatom;
 
   int nlocal,newton_bond;
   int eflag,vflag;
@@ -83,12 +84,12 @@ class DihedralOPLSKokkos : public DihedralOPLS {
   DAT::tdual_ffloat_1d k_k3;
   DAT::tdual_ffloat_1d k_k4;
 
-  DAT::t_ffloat_1d d_k1;
-  DAT::t_ffloat_1d d_k2;
-  DAT::t_ffloat_1d d_k3;
-  DAT::t_ffloat_1d d_k4;
+  typename AT::t_ffloat_1d d_k1;
+  typename AT::t_ffloat_1d d_k2;
+  typename AT::t_ffloat_1d d_k3;
+  typename AT::t_ffloat_1d d_k4;
 
-  virtual void allocate();
+  void allocate();
 };
 
 }

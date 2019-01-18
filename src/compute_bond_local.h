@@ -30,17 +30,22 @@ class ComputeBondLocal : public Compute {
   ~ComputeBondLocal();
   void init();
   void compute_local();
+  int pack_forward_comm(int, int *, double *, int, int *);
+  void unpack_forward_comm(int, int, double *);
   double memory_usage();
 
  private:
-  int nvalues;
-  int ncount;
-  int *bstyle;
-  int singleflag;
+  int nvalues,nvar,ncount,setflag;
+
+  int singleflag,velflag,ghostvelflag,initflag;
+  int dvar;
+  int *bstyle,*vvar;
+  char *dstr;
+  char **vstr;
 
   int nmax;
-  double *vector;
-  double **array;
+  double *vlocal;
+  double **alocal;
 
   int compute_bonds(int);
   void reallocate(int);
@@ -70,5 +75,9 @@ Self-explanatory.
 E: No bond style is defined for compute bond/local
 
 Self-explanatory.
+
+E: Sanity check on 3 energy components failed
+
+UNDOCUMENTED
 
 */

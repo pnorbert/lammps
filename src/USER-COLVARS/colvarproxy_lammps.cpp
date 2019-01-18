@@ -1,3 +1,12 @@
+// -*- c++ -*-
+
+// This file is part of the Collective Variables module (Colvars).
+// The original version of Colvars and its updates are located at:
+// https://github.com/colvars/colvars
+// Please update all Colvars source files before making any changes.
+// If you wish to distribute your changes, please submit them to the
+// Colvars repository at GitHub.
+
 
 #include <mpi.h>
 #include "lammps.h"
@@ -73,7 +82,7 @@ colvarproxy_lammps::colvarproxy_lammps(LAMMPS_NS::LAMMPS *lmp,
   _random = new LAMMPS_NS::RanPark(lmp,seed);
 
   first_timestep=true;
-  system_force_requested=false;
+  total_force_requested=false;
   previous_step=-1;
   t_target=temp;
   do_exit=false;
@@ -111,12 +120,6 @@ colvarproxy_lammps::colvarproxy_lammps(LAMMPS_NS::LAMMPS *lmp,
   if (restart_output_prefix_str.rfind(".*") != std::string::npos)
     restart_output_prefix_str.erase(restart_output_prefix_str.rfind(".*"),2);
 
-#if defined(_OPENMP)
-  if (smp_thread_id() == 0) {
-    omp_init_lock(&smp_lock_state);
-  }
-#endif
-
   // initialize multi-replica support, if available
   if (replica_enabled()) {
     MPI_Comm_rank(inter_comm, &inter_me);
@@ -130,11 +133,13 @@ colvarproxy_lammps::colvarproxy_lammps(LAMMPS_NS::LAMMPS *lmp,
 
 void colvarproxy_lammps::init(const char *conf_file)
 {
+  version_int = get_version_from_string(COLVARPROXY_VERSION);
+
   // create the colvarmodule instance
   colvars = new colvarmodule(this);
 
   cvm::log("Using LAMMPS interface, version "+
-            cvm::to_str(COLVARPROXY_VERSION)+".\n");
+           cvm::to_str(COLVARPROXY_VERSION)+".\n");
 
   my_angstrom  = _lmp->force->angstrom;
   my_boltzmann = _lmp->force->boltz;
@@ -146,7 +151,8 @@ void colvarproxy_lammps::init(const char *conf_file)
   colvars->setup_output();
 
   if (_lmp->update->ntimestep != 0) {
-    cvm::log("Initializing step number as firstTimestep.\n");
+    cvm::log("Setting initial step number from LAMMPS: "+
+             cvm::to_str(_lmp->update->ntimestep)+"\n");
     colvars->it = colvars->it_restart = _lmp->update->ntimestep;
   }
 
@@ -154,7 +160,6 @@ void colvarproxy_lammps::init(const char *conf_file)
     log("atoms_ids = "+cvm::to_str(atoms_ids)+"\n");
     log("atoms_ncopies = "+cvm::to_str(atoms_ncopies)+"\n");
     log("atoms_positions = "+cvm::to_str(atoms_positions)+"\n");
-    log("atoms_applied_forces = "+cvm::to_str(atoms_applied_forces)+"\n");
     log(cvm::line_marker);
     log("Info: done initializing the colvars proxy object.\n");
   }
@@ -164,7 +169,6 @@ colvarproxy_lammps::~colvarproxy_lammps()
 {
   delete _random;
   if (colvars != NULL) {
-    colvars->write_output_files();
     delete colvars;
     colvars = NULL;
   }
@@ -180,10 +184,18 @@ int colvarproxy_lammps::setup()
 // trigger colvars computation
 double colvarproxy_lammps::compute()
 {
+  if (cvm::debug()) {
+    log(std::string(cvm::line_marker)+
+        "colvarproxy_lammps step no. "+
+        cvm::to_str(_lmp->update->ntimestep)+" [first - last = "+
+        cvm::to_str(_lmp->update->beginstep)+" - "+
+        cvm::to_str(_lmp->update->endstep)+"]\n");
+  }
+
   if (first_timestep) {
     first_timestep = false;
   } else {
-    // Use the time step number inherited from LAMMPS
+    // Use the time step number from LAMMPS Update object
     if ( _lmp->update->ntimestep - previous_step == 1 )
       colvars->it++;
     // Other cases could mean:
@@ -193,19 +205,33 @@ double colvarproxy_lammps::compute()
   }
   previous_step = _lmp->update->ntimestep;
 
+  unit_cell_x.set(_lmp->domain->xprd, 0.0, 0.0);
+  unit_cell_y.set(0.0, _lmp->domain->yprd, 0.0);
+  unit_cell_z.set(0.0, 0.0, _lmp->domain->zprd);
+
+  if (_lmp->domain->xperiodic == 0 && _lmp->domain->yperiodic == 0 &&
+      _lmp->domain->zperiodic == 0) {
+    boundaries_type = boundaries_non_periodic;
+    reset_pbc_lattice();
+  } else if ((_lmp->domain->nonperiodic == 0) &&
+             (_lmp->domain->dimension == 3) &&
+             (_lmp->domain->triclinic == 0)) {
+    // Orthogonal unit cell
+    boundaries_type = boundaries_pbc_ortho;
+    colvarproxy_system::update_pbc_lattice();
+    // It is safer to let LAMMPS deal with high-tilt triclinic boxes
+  } else {
+    boundaries_type = boundaries_unsupported;
+  }
+
   if (cvm::debug()) {
-    cvm::log(cvm::line_marker+
+    cvm::log(std::string(cvm::line_marker)+
              "colvarproxy_lammps, step no. "+cvm::to_str(colvars->it)+"\n"+
              "Updating internal data.\n");
   }
 
-  // backup applied forces if necessary to calculate system forces
-  if (system_force_requested) {
-    atoms_applied_forces = atoms_new_colvar_forces;
-  }
-
   // zero the forces on the atoms, so that they can be accumulated by the colvars
-  for (size_t i = 0; i < atoms_applied_forces.size(); i++) {
+  for (size_t i = 0; i < atoms_new_colvar_forces.size(); i++) {
     atoms_new_colvar_forces[i].reset();
   }
 
@@ -238,6 +264,13 @@ void colvarproxy_lammps::serialize_status(std::string &rst)
   rst = os.str();
 }
 
+void colvarproxy_lammps::write_output_files()
+{
+  // TODO skip output if undefined
+  colvars->write_restart_file(cvm::output_prefix()+".colvars.state");
+  colvars->write_output_files();
+}
+
 // set status from string
 bool colvarproxy_lammps::deserialize_status(std::string &rst)
 {
@@ -251,8 +284,10 @@ bool colvarproxy_lammps::deserialize_status(std::string &rst)
   }
 }
 
+
 cvm::rvector colvarproxy_lammps::position_distance(cvm::atom_pos const &pos1,
                                                    cvm::atom_pos const &pos2)
+  const
 {
   double xtmp = pos2.x - pos1.x;
   double ytmp = pos2.y - pos1.y;
@@ -261,28 +296,6 @@ cvm::rvector colvarproxy_lammps::position_distance(cvm::atom_pos const &pos1,
   return cvm::rvector(xtmp, ytmp, ztmp);
 }
 
-cvm::real colvarproxy_lammps::position_dist2(cvm::atom_pos const &pos1,
-                                             cvm::atom_pos const &pos2)
-{
-  double xtmp = pos2.x - pos1.x;
-  double ytmp = pos2.y - pos1.y;
-  double ztmp = pos2.z - pos1.z;
-  _lmp->domain->minimum_image(xtmp,ytmp,ztmp);
-  return cvm::real(xtmp*xtmp + ytmp*ytmp + ztmp*ztmp);
-}
-
-
-void colvarproxy_lammps::select_closest_image(cvm::atom_pos &pos,
-                                              cvm::atom_pos const &ref)
-{
-  double xtmp = pos.x - ref.x;
-  double ytmp = pos.y - ref.y;
-  double ztmp = pos.z - ref.z;
-  _lmp->domain->minimum_image(xtmp,ytmp,ztmp);
-  pos.x = ref.x + xtmp;
-  pos.y = ref.y + ytmp;
-  pos.z = ref.z + ztmp;
-}
 
 void colvarproxy_lammps::log(std::string const &message)
 {
@@ -296,28 +309,19 @@ void colvarproxy_lammps::log(std::string const &message)
   }
 }
 
+
 void colvarproxy_lammps::error(std::string const &message)
 {
   // In LAMMPS, all errors are fatal
   fatal_error(message);
 }
 
+
 void colvarproxy_lammps::fatal_error(std::string const &message)
 {
   log(message);
-  if (!cvm::debug())
-    log("If this error message is unclear, try recompiling the "
-         "colvars library and LAMMPS with -DCOLVARS_DEBUG.\n");
-
   _lmp->error->one(FLERR,
                    "Fatal error in the collective variables module.\n");
-}
-
-void colvarproxy_lammps::exit(std::string const &message)
-{
-  log(message);
-  log("Request to exit the simulation made.\n");
-  do_exit=true;
 }
 
 
@@ -332,84 +336,13 @@ int colvarproxy_lammps::backup_file(char const *filename)
 }
 
 
-#if defined(_OPENMP)
-
-
-// SMP support
-
-int colvarproxy_lammps::smp_enabled()
-{
-  return COLVARS_OK;
-}
-
-
-int colvarproxy_lammps::smp_colvars_loop()
-{
-  colvarmodule *cv = this->colvars;
-#pragma omp parallel for
-  for (size_t i = 0; i < cv->colvars_smp.size(); i++) {
-    if (cvm::debug()) {
-      cvm::log("Calculating colvar \""+cv->colvars_smp[i]->name+"\" on thread "+cvm::to_str(smp_thread_id())+"\n");
-    }
-    cv->colvars_smp[i]->calc_cvcs(cv->colvars_smp_items[i], 1);
-  }
-  return cvm::get_error();
-}
-
-
-int colvarproxy_lammps::smp_biases_loop()
-{
-  colvarmodule *cv = this->colvars;
-#pragma omp parallel for
-  for (size_t i = 0; i < cv->biases.size(); i++) {
-    if (cvm::debug()) {
-      cvm::log("Calculating bias \""+cv->biases[i]->name+"\" on thread "+cvm::to_str(smp_thread_id())+"\n");
-    }
-    cv->biases[i]->update();
-  }
-  return cvm::get_error();
-}
-
-
-int colvarproxy_lammps::smp_thread_id()
-{
-  return omp_get_thread_num();
-}
-
-
-int colvarproxy_lammps::smp_num_threads()
-{
-  return omp_get_max_threads();
-}
-
-
-int colvarproxy_lammps::smp_lock()
-{
-  omp_set_lock(&smp_lock_state);
-  return COLVARS_OK;
-}
-
-
-int colvarproxy_lammps::smp_trylock()
-{
-  return omp_test_lock(&smp_lock_state) ? COLVARS_OK : COLVARS_ERROR;
-}
-
-
-int colvarproxy_lammps::smp_unlock()
-{
-  omp_unset_lock(&smp_lock_state);
-  return COLVARS_OK;
-}
-
-#endif
-
-
 // multi-replica support
 
-void colvarproxy_lammps::replica_comm_barrier() {
+void colvarproxy_lammps::replica_comm_barrier()
+{
   MPI_Barrier(inter_comm);
 }
+
 
 int colvarproxy_lammps::replica_comm_recv(char* msg_data,
                                           int buf_len, int src_rep)
@@ -423,6 +356,7 @@ int colvarproxy_lammps::replica_comm_recv(char* msg_data,
   } else retval = 0;
   return retval;
 }
+
 
 int colvarproxy_lammps::replica_comm_send(char* msg_data,
                                           int msg_len, int dest_rep)

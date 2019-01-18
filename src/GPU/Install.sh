@@ -3,6 +3,10 @@
 
 mode=$1
 
+# enforce using portable C locale
+LC_ALL=C
+export LC_ALL
+
 # arg1 = file, arg2 = file it depends on
 
 action () {
@@ -31,8 +35,12 @@ action pair_beck_gpu.cpp
 action pair_beck_gpu.h 
 action pair_born_coul_long_gpu.cpp pair_born_coul_long.cpp
 action pair_born_coul_long_gpu.h pair_born_coul_long.cpp
+action pair_born_coul_long_cs_gpu.cpp pair_born_coul_long_cs.cpp
+action pair_born_coul_long_cs_gpu.h pair_born_coul_long_cs.cpp
 action pair_born_coul_wolf_gpu.cpp
 action pair_born_coul_wolf_gpu.h
+action pair_born_coul_wolf_cs_gpu.cpp pair_born_coul_wolf_cs.cpp
+action pair_born_coul_wolf_cs_gpu.h pair_born_coul_wolf_cs.cpp
 action pair_born_gpu.cpp
 action pair_born_gpu.h
 action pair_buck_coul_cut_gpu.cpp pair_buck_coul_cut.cpp
@@ -51,6 +59,8 @@ action pair_coul_dsf_gpu.cpp
 action pair_coul_dsf_gpu.h
 action pair_coul_long_gpu.cpp pair_coul_long.cpp
 action pair_coul_long_gpu.h pair_coul_long.cpp
+action pair_coul_long_cs_gpu.cpp pair_coul_long_cs.cpp
+action pair_coul_long_cs_gpu.h pair_coul_long_cs.cpp
 action pair_dpd_gpu.cpp
 action pair_dpd_gpu.h
 action pair_dpd_tstat_gpu.cpp
@@ -93,6 +103,8 @@ action pair_lj_cut_gpu.cpp
 action pair_lj_cut_gpu.h
 action pair_lj_expand_gpu.cpp
 action pair_lj_expand_gpu.h
+action pair_lj_expand_coul_long_gpu.cpp pair_lj_expand_coul_long.cpp
+action pair_lj_expand_coul_long_gpu.h pair_lj_expand_coul_long.cpp
 action pair_lj_gromacs_gpu.cpp
 action pair_lj_gromacs_gpu.h
 action pair_lj_sdk_coul_long_gpu.cpp pair_lj_sdk_coul_long.cpp
@@ -109,6 +121,8 @@ action pair_soft_gpu.cpp
 action pair_soft_gpu.h
 action pair_sw_gpu.cpp pair_sw.cpp
 action pair_sw_gpu.h pair_sw.h
+action pair_vashishta_gpu.cpp pair_vashishta.cpp
+action pair_vashishta_gpu.h pair_vashishta.h
 action pair_table_gpu.cpp pair_table.cpp
 action pair_table_gpu.h pair_table.cpp
 action pair_tersoff_gpu.cpp pair_tersoff.cpp
@@ -125,6 +139,10 @@ action pair_zbl_gpu.cpp
 action pair_zbl_gpu.h
 action pppm_gpu.cpp pppm.cpp
 action pppm_gpu.h pppm.cpp
+action pair_ufm_gpu.cpp
+action pair_ufm_gpu.h
+action pair_lj_cut_dipole_long_gpu.cpp pair_lj_cut_dipole_long.cpp
+action pair_lj_cut_dipole_long_gpu.h pair_lj_cut_dipole_long.cpp
 
 # edit 2 Makefile.package files to include/exclude package info
 

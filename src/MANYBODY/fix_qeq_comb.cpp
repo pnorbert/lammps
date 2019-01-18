@@ -16,9 +16,9 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "pair_comb.h"
 #include "pair_comb3.h"
 #include "fix_qeq_comb.h"
@@ -38,7 +38,8 @@ using namespace FixConst;
 
 /* ---------------------------------------------------------------------- */
 
-FixQEQComb::FixQEQComb(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
+FixQEQComb::FixQEQComb(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg),
+  fp(NULL), comb(NULL), comb3(NULL), qf(NULL), q1(NULL), q2(NULL)
 {
   if (narg < 5) error->all(FLERR,"Illegal fix qeq/comb command");
 
@@ -58,8 +59,6 @@ FixQEQComb::FixQEQComb(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
 
   // optional args
 
-  fp = NULL;
-
   int iarg = 5;
   while (iarg < narg) {
     if (strcmp(arg[iarg],"file") == 0) {
@@ -68,7 +67,7 @@ FixQEQComb::FixQEQComb(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
         fp = fopen(arg[iarg+1],"w");
         if (fp == NULL) {
           char str[128];
-          sprintf(str,"Cannot open fix qeq/comb file %s",arg[iarg+1]);
+          snprintf(str,128,"Cannot open fix qeq/comb file %s",arg[iarg+1]);
           error->one(FLERR,str);
         }
       }
@@ -160,7 +159,7 @@ void FixQEQComb::min_post_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEQComb::post_force(int vflag)
+void FixQEQComb::post_force(int /*vflag*/)
 {
   int i,ii,iloop,loopmax,inum,*ilist;
   double heatpq,qmass,dtq,dtq2;
@@ -277,7 +276,7 @@ void FixQEQComb::post_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEQComb::post_force_respa(int vflag, int ilevel, int iloop)
+void FixQEQComb::post_force_respa(int vflag, int ilevel, int /*iloop*/)
 {
   if (ilevel == ilevel_respa) post_force(vflag);
 }
@@ -294,7 +293,7 @@ double FixQEQComb::memory_usage()
 /* ---------------------------------------------------------------------- */
 
 int FixQEQComb::pack_forward_comm(int n, int *list, double *buf,
-                                  int pbc_flag, int *pbc)
+                                  int /*pbc_flag*/, int * /*pbc*/)
 {
   int i,j,m;
 

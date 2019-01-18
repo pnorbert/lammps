@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <string.h>
+#include <cstring>
 #include "compute_dihedral.h"
 #include "update.h"
 #include "force.h"
@@ -24,7 +24,8 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeDihedral::ComputeDihedral(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg),
+  emine(NULL)
 {
   if (narg != 3) error->all(FLERR,"Illegal compute dihedral command");
 
@@ -40,7 +41,7 @@ ComputeDihedral::ComputeDihedral(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR,
                "Dihedral style for compute dihedral command is not hybrid");
   size_vector = nsub = dihedral->nstyles;
-  
+
   emine = new double[nsub];
   vector = new double[nsub];
 }
@@ -63,7 +64,7 @@ void ComputeDihedral::init()
   if (!dihedral)
     error->all(FLERR,
                "Dihedral style for compute dihedral command is not hybrid");
-  if (dihedral->nstyles != nsub) 
+  if (dihedral->nstyles != nsub)
     error->all(FLERR,"Dihedral style for compute dihedral command has changed");
 }
 

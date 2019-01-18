@@ -2,16 +2,19 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
 pair_style edip command :h3
+pair_style edip/omp command :h3
+pair_style edip/multi command :h3
 
 [Syntax:]
 
-pair_style edip :pre
-pair_style edip/omp :pre
+pair_style style :pre
+
+style = {edip} or {edip/multi} :ul
 
 [Examples:]
 
@@ -20,11 +23,14 @@ pair_coeff * * Si.edip Si
 
 [Description:]
 
-The {edip} style computes a 3-body "EDIP"_#EDIP potential which is
-popular for modeling silicon materials where it can have advantages
-over other models such as the "Stillinger-Weber"_pair_sw.html or
-"Tersoff"_pair_tersoff.html potentials.  In EDIP, the energy E of a
-system of atoms is
+The {edip} and {edip/multi} styles compute a 3-body "EDIP"_#EDIP
+potential which is popular for modeling silicon materials where
+it can have advantages over other models such as the
+"Stillinger-Weber"_pair_sw.html or "Tersoff"_pair_tersoff.html
+potentials. The {edip} style has been programmed for single element
+potentials, while {edip/multi} supports multi-element EDIP runs.
+
+In EDIP, the energy E of a system of atoms is
 
 :c,image(Eqs/pair_edip.jpg)
 
@@ -77,7 +83,7 @@ u3
 u4 :ul
 
 The A, B, beta, sigma parameters are used only for two-body interactions.
-The eta, gamma, lambda, mu, Q0 and all u1 to u4 parameters are used only 
+The eta, gamma, lambda, mu, Q0 and all u1 to u4 parameters are used only
 for three-body interactions. The alpha and cutoffC parameters are used
 for the coordination environment function only.
 
@@ -93,9 +99,9 @@ specify EDIP parameters for all permutations of the two elements
 interacting in three-body configurations.  Thus for 3 elements, 27
 entries would be required, etc.
 
-At the moment, only a single element parametrization is 
-implemented. However, the author is not aware of other 
-multi-element EDIP parametrizations. If you know any and 
+At the moment, only a single element parameterization is
+implemented. However, the author is not aware of other
+multi-element EDIP parameterization. If you know any and
 you are interest in that, please contact the author of
 the EDIP package.
 
@@ -104,23 +110,22 @@ the EDIP package.
 Styles with a {gpu}, {intel}, {kk}, {omp}, or {opt} suffix are
 functionally the same as the corresponding style without the suffix.
 They have been optimized to run faster, depending on your available
-hardware, as discussed in "Section_accelerate"_Section_accelerate.html
-of the manual.  The accelerated styles take the same arguments and
-should produce the same results, except for round-off and precision
-issues.
+hardware, as discussed on the "Speed packages"_Speed_packages.html doc
+page.  The accelerated styles take the same arguments and should
+produce the same results, except for round-off and precision issues.
 
 These accelerated styles are part of the GPU, USER-INTEL, KOKKOS,
 USER-OMP and OPT packages, respectively.  They are only enabled if
-LAMMPS was built with those packages.  See the "Making
-LAMMPS"_Section_start.html#start_3 section for more info.
+LAMMPS was built with those packages.  See the "Build
+package"_Build_package.html doc page for more info.
 
 You can specify the accelerated styles explicitly in your input script
 by including their suffix, or you can use the "-suffix command-line
-switch"_Section_start.html#start_7 when you invoke LAMMPS, or you can
-use the "suffix"_suffix.html command in your input script.
+switch"_Run_options.html when you invoke LAMMPS, or you can use the
+"suffix"_suffix.html command in your input script.
 
-See "Section_accelerate"_Section_accelerate.html of the manual for
-more instructions on how to use the accelerated styles effectively.
+See the "Speed packages"_Speed_packages.html doc page for more
+instructions on how to use the accelerated styles effectively.
 
 :line
 
@@ -142,16 +147,16 @@ This pair style can only be used via the {pair} keyword of the
 
 [Restrictions:]
 
-This angle style can only be used if LAMMPS was built with the
-USER-MISC package.  See the "Making LAMMPS"_Section_start.html#start_3
-section for more info on packages.
+This pair style can only be used if LAMMPS was built with the
+USER-MISC package.  See the "Build package"_Build_package.html doc
+page for more info.
 
 This pair style requires the "newton"_newton.html setting to be "on"
 for pair interactions.
 
-The EDIP potential files provided with LAMMPS (see the potentials directory) 
+The EDIP potential files provided with LAMMPS (see the potentials directory)
 are parameterized for metal "units"_units.html.
-You can use the SW potential with any LAMMPS units, but you would need
+You can use the EDIP potential with any LAMMPS units, but you would need
 to create your own EDIP potential file with coefficients listed in the
 appropriate units if your simulation doesn't use "metal" units.
 
@@ -164,4 +169,4 @@ appropriate units if your simulation doesn't use "metal" units.
 :line
 
 :link(EDIP)
-[(EDIP)] J. F. Justo et al., Phys. Rev. B 58, 2539 (1998).
+[(EDIP)] J F Justo et al, Phys Rev B 58, 2539 (1998).

@@ -17,8 +17,8 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "improper_cossq.h"
 #include "atom.h"
 #include "comm.h"
@@ -271,7 +271,7 @@ void ImproperCossq::coeff(int narg, char **arg)
    if (!allocated) allocate();
 
    int ilo,ihi;
-   force->bounds(arg[0],atom->nimpropertypes,ilo,ihi);
+   force->bounds(FLERR,arg[0],atom->nimpropertypes,ilo,ihi);
 
    double k_one = force->numeric(FLERR,arg[1]);
    double chi_one = force->numeric(FLERR,arg[2]);
@@ -311,4 +311,14 @@ void ImproperCossq::read_restart(FILE *fp)
   MPI_Bcast(&chi[1],atom->nimpropertypes,MPI_DOUBLE,0,world);
 
   for (int i = 1; i <= atom->nimpropertypes; i++) setflag[i] = 1;
+}
+
+/* ----------------------------------------------------------------------
+   proc 0 writes to data file
+------------------------------------------------------------------------- */
+
+void ImproperCossq::write_data(FILE *fp)
+{
+  for (int i = 1; i <= atom->nimpropertypes; i++)
+    fprintf(fp,"%d %g %g\n",i,k[i],chi[i]/MY_PI*180.0);
 }

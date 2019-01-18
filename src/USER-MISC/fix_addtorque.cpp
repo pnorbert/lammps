@@ -15,8 +15,8 @@
    Contributing author: Laurent Joly (U Lyon, France), ljoly.ulyon@gmail.com
 ------------------------------------------------------------------------- */
 
-#include <string.h>
-#include <stdlib.h>
+#include <cstring>
+#include <cstdlib>
 #include "fix_addtorque.h"
 #include "atom.h"
 #include "update.h"
@@ -48,6 +48,7 @@ FixAddTorque::FixAddTorque(LAMMPS *lmp, int narg, char **arg) :
   global_freq = 1;
   extscalar = 1;
   extvector = 1;
+  dynamic_group_allow = 1;
   respa_level_support = 1;
   ilevel_respa = 0;
 
@@ -163,7 +164,7 @@ void FixAddTorque::min_setup(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixAddTorque::post_force(int vflag)
+void FixAddTorque::post_force(int /*vflag*/)
 {
   double **x = atom->x;
   double **f = atom->f;
@@ -195,7 +196,7 @@ void FixAddTorque::post_force(int vflag)
     modify->addstep_compute(update->ntimestep + 1);
   }
 
-  atom->check_mass();
+  atom->check_mass(FLERR);
   double masstotal = group->mass(igroup);
   group->xcm(igroup,masstotal,xcm);
   group->inertia(igroup,xcm,inertia);
@@ -251,7 +252,7 @@ void FixAddTorque::post_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixAddTorque::post_force_respa(int vflag, int ilevel, int iloop)
+void FixAddTorque::post_force_respa(int vflag, int ilevel, int /*iloop*/)
 {
   if (ilevel == ilevel_respa) post_force(vflag);
 }

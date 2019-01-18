@@ -16,13 +16,13 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <ctype.h>
-#include <float.h>
-#include <limits.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cctype>
+#include <cfloat>
+#include <climits>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair.h"
 #include "atom.h"
 #include "neighbor.h"
@@ -75,7 +75,7 @@ Pair::Pair(LAMMPS *lmp) : Pointers(lmp)
   ewaldflag = pppmflag = msmflag = dispersionflag = tip4pflag = dipoleflag = 0;
   reinitflag = 1;
 
-  // pair_modify settingsx
+  // pair_modify settings
 
   compute_flag = 1;
   manybody_flag = 0;
@@ -87,6 +87,8 @@ Pair::Pair(LAMMPS *lmp) : Pointers(lmp)
   ndisptablebits = 12;
   tabinner = sqrt(2.0);
   tabinner_disp = sqrt(2.0);
+  ftable = NULL;
+  fdisptable = NULL;
 
   allocated = 0;
   suffix_flag = Suffix::NONE;
@@ -99,9 +101,6 @@ Pair::Pair(LAMMPS *lmp) : Pointers(lmp)
   list_tally_compute = NULL;
 
   // KOKKOS per-fix data masks
-
-  datamask = ALL_MASK;
-  datamask_ext = ALL_MASK;
 
   execution_space = Host;
   datamask_read = ALL_MASK;
@@ -196,11 +195,11 @@ void Pair::init()
   if (tail_flag && domain->dimension == 2)
     error->all(FLERR,"Cannot use pair tail corrections with 2d simulations");
   if (tail_flag && domain->nonperiodic && comm->me == 0)
-    error->warning(FLERR,"Using pair tail corrections with nonperiodic system");
-  if (!compute_flag && tail_flag)
+    error->warning(FLERR,"Using pair tail corrections with non-periodic system");
+  if (!compute_flag && tail_flag && comm->me == 0)
     error->warning(FLERR,"Using pair tail corrections with "
                    "pair_modify compute no");
-  if (!compute_flag && offset_flag)
+  if (!compute_flag && offset_flag && comm->me == 0)
     error->warning(FLERR,"Using pair potential shift with "
                    "pair_modify compute no");
 
@@ -302,7 +301,7 @@ void Pair::init_style()
    specific pair style can override this function
 ------------------------------------------------------------------------- */
 
-void Pair::init_list(int which, NeighList *ptr)
+void Pair::init_list(int /*which*/, NeighList *ptr)
 {
   list = ptr;
 }
@@ -564,7 +563,7 @@ void Pair::init_tables_disp(double cut_lj_global)
       rsq_lookup.i |= maskhi;
     }
     rsq = rsq_lookup.f;
-    register double x2 = g2*rsq, a2 = 1.0/x2;
+    double x2 = g2*rsq, a2 = 1.0/x2;
     x2 = a2*exp(-x2);
 
     rdisptable[i] = rsq_lookup.f;
@@ -610,7 +609,7 @@ void Pair::init_tables_disp(double cut_lj_global)
   if (rsq_lookup.f < (cut_lj_globalsq = cut_lj_global * cut_lj_global)) {
     rsq_lookup.f = cut_lj_globalsq;
 
-    register double x2 = g2*rsq, a2 = 1.0/x2;
+    double x2 = g2*rsq, a2 = 1.0/x2;
     x2 = a2*exp(-x2);
     f_tmp = g8*(((6.0*a2+6.0)*a2+3.0)*a2+1.0)*x2*rsq;
     e_tmp = g6*((a2+1.0)*a2+0.5)*x2;
@@ -693,6 +692,22 @@ void Pair::compute_dummy(int eflag, int vflag)
   else evflag = 0;
 }
 
+/* ---------------------------------------------------------------------- */
+
+void Pair::read_restart(FILE *)
+{
+  if (comm->me == 0)
+    error->warning(FLERR,"Pair style restartinfo set but has no restart support");
+}
+
+/* ---------------------------------------------------------------------- */
+
+void Pair::write_restart(FILE *)
+{
+  if (comm->me == 0)
+    error->warning(FLERR,"Pair style restartinfo set but has no restart support");
+}
+
 /* -------------------------------------------------------------------
    register a callback to a compute, so it can compute and accumulate
    additional properties during the pair computation from within
@@ -750,7 +765,7 @@ void Pair::del_tally_callback(Compute *ptr)
    see integrate::ev_set() for values of eflag (0-3) and vflag (0-6)
 ------------------------------------------------------------------------- */
 
-void Pair::ev_setup(int eflag, int vflag)
+void Pair::ev_setup(int eflag, int vflag, int alloc)
 {
   int i,n;
 
@@ -768,13 +783,17 @@ void Pair::ev_setup(int eflag, int vflag)
 
   if (eflag_atom && atom->nmax > maxeatom) {
     maxeatom = atom->nmax;
-    memory->destroy(eatom);
-    memory->create(eatom,comm->nthreads*maxeatom,"pair:eatom");
+    if (alloc) {
+      memory->destroy(eatom);
+      memory->create(eatom,comm->nthreads*maxeatom,"pair:eatom");
+    }
   }
   if (vflag_atom && atom->nmax > maxvatom) {
     maxvatom = atom->nmax;
-    memory->destroy(vatom);
-    memory->create(vatom,comm->nthreads*maxvatom,6,"pair:vatom");
+    if (alloc) {
+      memory->destroy(vatom);
+      memory->create(vatom,comm->nthreads*maxvatom,6,"pair:vatom");
+    }
   }
 
   // zero accumulators
@@ -783,12 +802,12 @@ void Pair::ev_setup(int eflag, int vflag)
 
   if (eflag_global) eng_vdwl = eng_coul = 0.0;
   if (vflag_global) for (i = 0; i < 6; i++) virial[i] = 0.0;
-  if (eflag_atom) {
+  if (eflag_atom && alloc) {
     n = atom->nlocal;
     if (force->newton) n += atom->nghost;
     for (i = 0; i < n; i++) eatom[i] = 0.0;
   }
-  if (vflag_atom) {
+  if (vflag_atom && alloc) {
     n = atom->nlocal;
     if (force->newton) n += atom->nghost;
     for (i = 0; i < n; i++) {
@@ -811,6 +830,16 @@ void Pair::ev_setup(int eflag, int vflag)
     if (vflag_atom == 0) vflag_either = 0;
     if (vflag_either == 0 && eflag_either == 0) evflag = 0;
   } else vflag_fdotr = 0;
+
+
+  // run ev_setup option for USER-TALLY computes
+
+  if (num_tally_compute > 0) {
+    for (int k=0; k < num_tally_compute; ++k) {
+      Compute *c = list_tally_compute[k];
+      c->pair_setup_callback(eflag,vflag);
+    }
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -1535,7 +1564,7 @@ void Pair::virial_fdotr_compute()
 
 void Pair::write_file(int narg, char **arg)
 {
-  if (narg < 8) error->all(FLERR,"Illegal pair_write command");
+  if (narg != 8 && narg != 10) error->all(FLERR,"Illegal pair_write command");
   if (single_enable == 0)
     error->all(FLERR,"Pair style does not support pair_write");
 

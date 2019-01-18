@@ -16,10 +16,10 @@
                          Amit Kumar and Michael Bybee (UIUC)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_lubricate.h"
 #include "atom.h"
 #include "atom_vec.h"
@@ -42,10 +42,6 @@
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
-
-// same as fix_deform.cpp
-
-enum{NO_REMAP,X_REMAP,V_REMAP};
 
 // same as fix_wall.cpp
 
@@ -489,7 +485,7 @@ void PairLubricate::settings(int narg, char **arg)
 
   if (allocated) {
     for (int i = 1; i <= atom->ntypes; i++)
-      for (int j = i+1; j <= atom->ntypes; j++)
+      for (int j = i; j <= atom->ntypes; j++)
         if (setflag[i][j]) {
           cut_inner[i][j] = cut_inner_global;
           cut[i][j] = cut_global;
@@ -509,8 +505,8 @@ void PairLubricate::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double cut_inner_one = cut_inner_global;
   double cut_one = cut_global;
@@ -570,7 +566,7 @@ void PairLubricate::init_style()
   for (int i = 0; i < modify->nfix; i++){
     if (strcmp(modify->fix[i]->style,"deform") == 0) {
       shearing = flagdeform = 1;
-      if (((FixDeform *) modify->fix[i])->remapflag != V_REMAP)
+      if (((FixDeform *) modify->fix[i])->remapflag != Domain::V_REMAP)
         error->all(FLERR,"Using pair lubricate with inconsistent "
                    "fix deform remap option");
     }
@@ -753,7 +749,7 @@ void PairLubricate::read_restart_settings(FILE *fp)
 /* ---------------------------------------------------------------------- */
 
 int PairLubricate::pack_forward_comm(int n, int *list, double *buf,
-                                     int pbc_flag, int *pbc)
+                                     int /*pbc_flag*/, int * /*pbc*/)
 {
   int i,j,m;
 
@@ -801,7 +797,7 @@ void PairLubricate::unpack_forward_comm(int n, int first, double *buf)
    if type pair setting, return -2 if no type pairs are set
 ------------------------------------------------------------------------- */
 
-int PairLubricate::pre_adapt(char *name, int ilo, int ihi, int jlo, int jhi)
+int PairLubricate::pre_adapt(char *name, int /*ilo*/, int /*ihi*/, int /*jlo*/, int /*jhi*/)
 {
   if (strcmp(name,"mu") == 0) return 0;
   return -1;
@@ -813,7 +809,7 @@ int PairLubricate::pre_adapt(char *name, int ilo, int ihi, int jlo, int jhi)
    if type pair setting, set I-J and J-I coeffs
 ------------------------------------------------------------------------- */
 
-void PairLubricate::adapt(int which, int ilo, int ihi, int jlo, int jhi,
+void PairLubricate::adapt(int /*which*/, int /*ilo*/, int /*ihi*/, int /*jlo*/, int /*jhi*/,
                           double value)
 {
   mu = value;

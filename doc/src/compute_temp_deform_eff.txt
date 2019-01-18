@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -26,12 +26,12 @@ nuclei and electrons in the "electron force field"_pair_eff.html
 model, after subtracting out a streaming velocity induced by the
 simulation box changing size and/or shape, for example in a
 non-equilibrium MD (NEMD) simulation.  The size/shape change is
-induced by use of the "fix deform/eff"_fix_deform_eff.html command.  A
+induced by use of the "fix deform"_fix_deform.html command.  A
 compute of this style is created by the "fix
 nvt/sllod/eff"_fix_nvt_sllod_eff.html command to compute the thermal
 temperature of atoms for thermostatting purposes.  A compute of this
 style can also be used by any command that computes a temperature,
-e.g. "thermo_modify"_thermo_modify.html, "fix npt/eff"_fix_nh.html,
+e.g. "thermo_modify"_thermo_modify.html, "fix npt/eff"_fix_nh_eff.html,
 etc.
 
 The calculation performed by this compute is exactly like that
@@ -48,8 +48,8 @@ component of the electrons is not affected.
 This compute calculates a global scalar (the temperature) and a global
 vector of length 6 (KE tensor), which can be accessed by indices 1-6.
 These values can be used by any command that uses global scalar or
-vector values from a compute as input.  See "this
-section"_Section_howto.html#howto_15 for an overview of LAMMPS output
+vector values from a compute as input.  See the "Howto
+output"_Howto_output.html doc page for an overview of LAMMPS output
 options.
 
 The scalar value calculated by this compute is "intensive".  The
@@ -61,13 +61,12 @@ vector values will be in energy "units"_units.html.
 [Restrictions:]
 
 This compute is part of the USER-EFF package.  It is only enabled if
-LAMMPS was built with that package.  See the "Making
-LAMMPS"_Section_start.html#start_3 section for more info.
+LAMMPS was built with that package.  See the "Build
+package"_Build_package.html doc page for more info.
 
 [Related commands:]
 
-"compute temp/ramp"_compute_temp_ramp.html, "fix
-deform/eff"_fix_deform_eff.html, "fix
-nvt/sllod/eff"_fix_nvt_sllod_eff.html
+"compute temp/ramp"_compute_temp_ramp.html, "fix deform"_fix_deform.html,
+"fix nvt/sllod/eff"_fix_nvt_sllod_eff.html
 
 [Default:] none

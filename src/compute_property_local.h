@@ -37,8 +37,8 @@ class ComputePropertyLocal : public Compute {
   int nvalues,kindflag,cutstyle;
 
   int nmax;
-  double *vector;
-  double **array;
+  double *vlocal;
+  double **alocal;
   double *buf;
 
   class NeighList *list;
@@ -99,11 +99,7 @@ command-line option when running LAMMPS to see the offending line.
 E: Compute property/local cannot use these inputs together
 
 Only inputs that generate the same number of datums can be used
-togther.  E.g. bond and angle quantities cannot be mixed.
-
-E: Invalid keyword in compute property/local command
-
-Self-explanatory.
+together.  E.g. bond and angle quantities cannot be mixed.
 
 E: Compute property/local does not (yet) work with atom_style template
 
@@ -113,6 +109,10 @@ E: Compute property/local for property that isn't allocated
 
 Self-explanatory.
 
+E: Compute property/local requires atom attribute radius
+
+UNDOCUMENTED
+
 E: No pair style is defined for compute property/local
 
 Self-explanatory.
@@ -121,5 +121,9 @@ E: Pair style does not support compute property/local
 
 The pair style does not have a single() function, so it can
 not be invoked by fix bond/swap.
+
+U: Invalid keyword in compute property/local command
+
+Self-explanatory.
 
 */

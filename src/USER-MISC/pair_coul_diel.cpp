@@ -14,10 +14,10 @@
    Contributiong authors: Arben Jusufi, Axel Kohlmeyer (Temple U.)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_coul_diel.h"
 #include "atom.h"
 #include "comm.h"
@@ -168,7 +168,7 @@ void PairCoulDiel::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
+      for (j = i; j <= atom->ntypes; j++)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 }
@@ -183,8 +183,8 @@ void PairCoulDiel::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   eps_s = force->numeric(FLERR,arg[2]);
   double rme_one =force->numeric(FLERR,arg[3]);
@@ -235,7 +235,7 @@ double PairCoulDiel::init_one(int i, int j)
   double *q = atom->q;
   double qqrd2e = force->qqrd2e;
 
-  if (offset_flag) {
+  if (offset_flag && (cut[i][j] > 0.0)) {
     double rarg = (cut[i][j]-rme[i][j])/sigmae[i][j];
     double epsr=a_eps+b_eps*tanh(rarg);
     offset[i][j] = qqrd2e*q[i]*q[j]*((eps_s/epsr) -1.)/cut[i][j];
@@ -326,7 +326,7 @@ void PairCoulDiel::read_restart_settings(FILE *fp)
 /* ---------------------------------------------------------------------- */
 
 double PairCoulDiel::single(int i, int j, int itype, int jtype,
-                           double rsq, double factor_coul, double factor_lj,
+                           double rsq, double factor_coul, double /*factor_lj*/,
                            double &fforce)
 {
   double r, rarg,forcedielec,phidielec;

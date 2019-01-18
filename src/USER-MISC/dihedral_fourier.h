@@ -20,7 +20,7 @@ DihedralStyle(fourier,DihedralFourier)
 #ifndef LMP_DIHEDRAL_FOURIER_H
 #define LMP_DIHEDRAL_FOURIER_H
 
-#include <stdio.h>
+#include <cstdio>
 #include "dihedral.h"
 
 namespace LAMMPS_NS {
@@ -33,6 +33,7 @@ class DihedralFourier : public Dihedral {
   void coeff(int, char **);
   void write_restart(FILE *);
   void read_restart(FILE *);
+  void write_data(FILE *);
 
  protected:
   double **k,**cos_shift,**sin_shift,**shift;

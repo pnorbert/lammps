@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "molecule.h"
 #include "atom.h"
 #include "atom_vec.h"
@@ -37,11 +37,23 @@ using namespace MathConst;
 /* ---------------------------------------------------------------------- */
 
 Molecule::Molecule(LAMMPS *lmp, int narg, char **arg, int &index) :
-  Pointers(lmp)
+  Pointers(lmp), id(NULL), x(NULL), type(NULL), q(NULL), radius(NULL),
+  rmass(NULL), num_bond(NULL), bond_type(NULL), bond_atom(NULL),
+  num_angle(NULL), angle_type(NULL), angle_atom1(NULL), angle_atom2(NULL),
+  angle_atom3(NULL), num_dihedral(NULL), dihedral_type(NULL), dihedral_atom1(NULL),
+  dihedral_atom2(NULL), dihedral_atom3(NULL), dihedral_atom4(NULL), num_improper(NULL),
+  improper_type(NULL), improper_atom1(NULL), improper_atom2(NULL),
+  improper_atom3(NULL), improper_atom4(NULL), nspecial(NULL), special(NULL),
+  shake_flag(NULL), shake_atom(NULL), shake_type(NULL), avec_body(NULL), ibodyparams(NULL),
+  dbodyparams(NULL), dx(NULL), dxcom(NULL), dxbody(NULL), quat_external(NULL),
+  fp(NULL), count(NULL)
 {
   me = comm->me;
 
   if (index >= narg) error->all(FLERR,"Illegal molecule command");
+
+  if (domain->box_exist == 0)
+    error->all(FLERR,"Molecule command before simulation box is defined");
 
   int n = strlen(arg[0]) + 1;
   id = new char[n];
@@ -135,17 +147,17 @@ Molecule::Molecule(LAMMPS *lmp, int narg, char **arg, int &index) :
   if (me == 0) {
     if (screen)
       fprintf(screen,"Read molecule %s:\n"
-              "  %d atoms with %d types\n  %d bonds with %d types\n"
-              "  %d angles with %d types\n  %d dihedrals with %d types\n"
-              "  %d impropers with %d types\n",
+              "  %d atoms with max type %d\n  %d bonds with max type %d\n"
+              "  %d angles with max type %d\n  %d dihedrals with max type %d\n"
+              "  %d impropers with max type %d\n",
               id,natoms,ntypes,
               nbonds,nbondtypes,nangles,nangletypes,
               ndihedrals,ndihedraltypes,nimpropers,nimpropertypes);
     if (logfile)
       fprintf(logfile,"Read molecule %s:\n"
-              "  %d atoms with %d types\n  %d bonds with %d types\n"
-              "  %d angles with %d types\n  %d dihedrals with %d types\n"
-              "  %d impropers with %d types\n",
+              "  %d atoms with max type %d\n  %d bonds with max type %d\n"
+              "  %d angles with max type %d\n  %d dihedrals with max type %d\n"
+              "  %d impropers with max type %d\n",
               id,natoms,ntypes,
               nbonds,nbondtypes,nangles,nangletypes,
               ndihedrals,ndihedraltypes,nimpropers,nimpropertypes);
@@ -164,7 +176,7 @@ Molecule::~Molecule()
    compute center = geometric center of molecule
    also compute:
      dx = displacement of each atom from center
-     molradius = radius of molecule from center 
+     molradius = radius of molecule from center
        including finite-size particles or body particles
 ------------------------------------------------------------------------- */
 
@@ -210,7 +222,7 @@ void Molecule::compute_mass()
   if (massflag) return;
   massflag = 1;
 
-  if (!rmassflag) atom->check_mass();
+  atom->check_mass(FLERR);
 
   masstotal = 0.0;
   for (int i = 0; i < natoms; i++) {
@@ -234,7 +246,7 @@ void Molecule::compute_com()
   if (!comflag) {
     comflag = 1;
 
-    if (!rmassflag) atom->check_mass();
+    atom->check_mass(FLERR);
 
     double onemass;
     com[0] = com[1] = com[2] = 0.0;
@@ -299,7 +311,7 @@ void Molecule::compute_inertia()
   if (!inertiaflag) {
     inertiaflag = 1;
 
-    if (!rmassflag) atom->check_mass();
+    atom->check_mass(FLERR);
 
     double onemass,dx,dy,dz;
     for (int i = 0; i < 6; i++) itensor[i] = 0.0;
@@ -418,52 +430,66 @@ void Molecule::read(int flag)
 
     // search line for header keywords and set corresponding variable
 
-    if (strstr(line,"atoms")) sscanf(line,"%d",&natoms);
-    else if (strstr(line,"bonds")) sscanf(line,"%d",&nbonds);
-    else if (strstr(line,"angles")) sscanf(line,"%d",&nangles);
-    else if (strstr(line,"dihedrals")) sscanf(line,"%d",&ndihedrals);
-    else if (strstr(line,"impropers")) sscanf(line,"%d",&nimpropers);
-
-    else if (strstr(line,"mass")) {
+    int nmatch = 0;
+    int nwant = 0;
+    if (strstr(line,"atoms")) {
+      nmatch = sscanf(line,"%d",&natoms);
+      nwant = 1;
+    } else if (strstr(line,"bonds")) {
+      nmatch = sscanf(line,"%d",&nbonds);
+      nwant = 1;
+    } else if (strstr(line,"angles")) {
+      nmatch = sscanf(line,"%d",&nangles);
+      nwant = 1;
+    } else if (strstr(line,"dihedrals")) {
+      nmatch = sscanf(line,"%d",&ndihedrals);
+      nwant = 1;
+    } else if (strstr(line,"impropers")) {
+      nmatch = sscanf(line,"%d",&nimpropers);
+      nwant = 1;
+    } else if (strstr(line,"mass")) {
       massflag = 1;
-      sscanf(line,"%lg",&masstotal);
+      nmatch = sscanf(line,"%lg",&masstotal);
+      nwant = 1;
       masstotal *= sizescale*sizescale*sizescale;
-    }
-    else if (strstr(line,"com")) {
+    } else if (strstr(line,"com")) {
       comflag = 1;
-      sscanf(line,"%lg %lg %lg",&com[0],&com[1],&com[2]);
+      nmatch = sscanf(line,"%lg %lg %lg",&com[0],&com[1],&com[2]);
+      nwant = 3;
       com[0] *= sizescale;
       com[1] *= sizescale;
       com[2] *= sizescale;
       if (domain->dimension == 2 && com[2] != 0.0)
         error->all(FLERR,"Molecule file z center-of-mass must be 0.0 for 2d");
-    }
-    else if (strstr(line,"inertia")) {
+    } else if (strstr(line,"inertia")) {
       inertiaflag = 1;
-      sscanf(line,"%lg %lg %lg %lg %lg %lg",
-             &itensor[0],&itensor[1],&itensor[2],
-             &itensor[3],&itensor[4],&itensor[5]);
-      itensor[0] *= sizescale*sizescale*sizescale*sizescale*sizescale;
-      itensor[1] *= sizescale*sizescale*sizescale*sizescale*sizescale;
-      itensor[2] *= sizescale*sizescale*sizescale*sizescale*sizescale;
-      itensor[3] *= sizescale*sizescale*sizescale*sizescale*sizescale;
-      itensor[4] *= sizescale*sizescale*sizescale*sizescale*sizescale;
-      itensor[5] *= sizescale*sizescale*sizescale*sizescale*sizescale;
-    }
-    else if (strstr(line,"body")) {
+      nmatch = sscanf(line,"%lg %lg %lg %lg %lg %lg",
+                      &itensor[0],&itensor[1],&itensor[2],
+                      &itensor[3],&itensor[4],&itensor[5]);
+      nwant = 6;
+      const double scale5 = sizescale*sizescale*sizescale*sizescale*sizescale;
+      itensor[0] *= scale5;
+      itensor[1] *= scale5;
+      itensor[2] *= scale5;
+      itensor[3] *= scale5;
+      itensor[4] *= scale5;
+      itensor[5] *= scale5;
+    } else if (strstr(line,"body")) {
       bodyflag = 1;
       avec_body = (AtomVecBody *) atom->style_match("body");
-      if (!avec_body) 
+      if (!avec_body)
         error->all(FLERR,"Molecule file requires atom style body");
-      sscanf(line,"%d %d",&nibody,&ndbody);
-    }
+      nmatch = sscanf(line,"%d %d",&nibody,&ndbody);
+      nwant = 2;
+    } else break;
 
-    else break;
+    if (nmatch != nwant)
+      error->all(FLERR,"Invalid header in molecule file");
   }
 
   // error checks
 
-  if (natoms < 1) 
+  if (natoms < 1)
     error->all(FLERR,"No count or invalid atom count in molecule file");
   if (nbonds < 0) error->all(FLERR,"Invalid bond count in molecule file");
   if (nangles < 0) error->all(FLERR,"Invalid angle count in molecule file");
@@ -484,7 +510,7 @@ void Molecule::read(int flag)
 
   // loop over sections of molecule file
 
-  while (strlen(keyword)) {
+  while (strlen(keyword) > 0) {
     if (strcmp(keyword,"Coords") == 0) {
       xflag = 1;
       if (flag) coords(line);
@@ -508,22 +534,22 @@ void Molecule::read(int flag)
 
     } else if (strcmp(keyword,"Bonds") == 0) {
       if (nbonds == 0)
-	error->all(FLERR,"Molecule file has bonds but no nbonds setting");
+        error->all(FLERR,"Molecule file has bonds but no nbonds setting");
       bondflag = tag_require = 1;
       bonds(flag,line);
     } else if (strcmp(keyword,"Angles") == 0) {
       if (nangles == 0)
-	error->all(FLERR,"Molecule file has angles but no nangles setting");
+        error->all(FLERR,"Molecule file has angles but no nangles setting");
       angleflag = tag_require = 1;
       angles(flag,line);
     } else if (strcmp(keyword,"Dihedrals") == 0) {
       if (ndihedrals == 0) error->all(FLERR,"Molecule file has dihedrals "
-				      "but no ndihedrals setting");
+                                      "but no ndihedrals setting");
       dihedralflag = tag_require = 1;
       dihedrals(flag,line);
     } else if (strcmp(keyword,"Impropers") == 0) {
       if (nimpropers == 0) error->all(FLERR,"Molecule file has impropers "
-				      "but no nimpropers setting");
+                                      "but no nimpropers setting");
       improperflag = tag_require = 1;
       impropers(flag,line);
 
@@ -543,26 +569,26 @@ void Molecule::read(int flag)
       shakeatomflag = tag_require = 1;
       if (shaketypeflag) shakeflag = 1;
       if (!shakeflagflag)
-	error->all(FLERR,"Molecule file shake flags not before shake atoms");
+        error->all(FLERR,"Molecule file shake flags not before shake atoms");
       if (flag) shakeatom_read(line);
       else skip_lines(natoms,line);
     } else if (strcmp(keyword,"Shake Bond Types") == 0) {
       shaketypeflag = 1;
       if (shakeatomflag) shakeflag = 1;
       if (!shakeflagflag)
-	error->all(FLERR,"Molecule file shake flags not before shake bonds");
+        error->all(FLERR,"Molecule file shake flags not before shake bonds");
       if (flag) shaketype_read(line);
       else skip_lines(natoms,line);
 
     } else if (strcmp(keyword,"Body Integers") == 0) {
       if (bodyflag == 0 || nibody == 0)
-	error->all(FLERR,"Molecule file has body params "
+        error->all(FLERR,"Molecule file has body params "
                    "but no setting for them");
       ibodyflag = 1;
       body(flag,0,line);
     } else if (strcmp(keyword,"Body Doubles") == 0) {
       if (bodyflag == 0 || ndbody == 0)
-	error->all(FLERR,"Molecule file has body params "
+        error->all(FLERR,"Molecule file has body params "
                    "but no setting for them");
       dbodyflag = 1;
       body(flag,1,line);
@@ -592,10 +618,12 @@ void Molecule::read(int flag)
   }
 
   // auto-generate special bonds if needed and not in file
-  // set maxspecial on first pass, so allocate() has a size
 
   if (bondflag && specialflag == 0) {
-    maxspecial = atom->maxspecial;
+    if (domain->box_exist == 0)
+      error->all(FLERR,"Cannot auto-generate special bonds before "
+                       "simulation box is defined");
+
     if (flag) {
       special_generate();
       specialflag = 1;
@@ -605,10 +633,10 @@ void Molecule::read(int flag)
 
   // body particle must have natom = 1
   // set radius by having body class compute its own radius
-  
+
   if (bodyflag) {
     radiusflag = 1;
-    if (natoms != 1) 
+    if (natoms != 1)
       error->all(FLERR,"Molecule natoms must be 1 for body particle");
     if (sizescale != 1.0)
       error->all(FLERR,"Molecule sizescale must be 1.0 for body particle");
@@ -628,12 +656,9 @@ void Molecule::coords(char *line)
   int tmp;
   for (int i = 0; i < natoms; i++) {
     readline(line);
-    if (i == 0) {
-      int nwords = atom->count_words(line);
-      if (nwords != 4)
-        error->all(FLERR,"Invalid Coords section in molecule file");
-    }
-    sscanf(line,"%d %lg %lg %lg",&tmp,&x[i][0],&x[i][1],&x[i][2]);
+    if (4 != sscanf(line,"%d %lg %lg %lg",&tmp,&x[i][0],&x[i][1],&x[i][2]))
+      error->all(FLERR,"Invalid Coords section in molecule file");
+
     x[i][0] *= sizescale;
     x[i][1] *= sizescale;
     x[i][2] *= sizescale;
@@ -656,17 +681,13 @@ void Molecule::types(char *line)
   int tmp;
   for (int i = 0; i < natoms; i++) {
     readline(line);
-    if (i == 0) {
-      int nwords = atom->count_words(line);
-      if (nwords != 2)
-        error->all(FLERR,"Invalid Types section in molecule file");
-    }
-    sscanf(line,"%d %d",&tmp,&type[i]);
+    if (2 != sscanf(line,"%d %d",&tmp,&type[i]))
+      error->all(FLERR,"Invalid Types section in molecule file");
     type[i] += toffset;
   }
 
   for (int i = 0; i < natoms; i++)
-    if (type[i] <= 0)
+    if (type[i] <= 0 || type[i] > atom->ntypes)
       error->all(FLERR,"Invalid atom type in molecule file");
 
   for (int i = 0; i < natoms; i++)
@@ -682,12 +703,8 @@ void Molecule::charges(char *line)
   int tmp;
   for (int i = 0; i < natoms; i++) {
     readline(line);
-    if (i == 0) {
-      int nwords = atom->count_words(line);
-      if (nwords != 2)
-        error->all(FLERR,"Invalid Charges section in molecule file");
-    }
-    sscanf(line,"%d %lg",&tmp,&q[i]);
+    if (2 != sscanf(line,"%d %lg",&tmp,&q[i]))
+      error->all(FLERR,"Invalid Charges section in molecule file");
   }
 }
 
@@ -701,12 +718,8 @@ void Molecule::diameters(char *line)
   maxradius = 0.0;
   for (int i = 0; i < natoms; i++) {
     readline(line);
-    if (i == 0) {
-      int nwords = atom->count_words(line);
-      if (nwords != 2)
-        error->all(FLERR,"Invalid Diameters section in molecule file");
-    }
-    sscanf(line,"%d %lg",&tmp,&radius[i]);
+    if (2 != sscanf(line,"%d %lg",&tmp,&radius[i]))
+      error->all(FLERR,"Invalid Diameters section in molecule file");
     radius[i] *= sizescale;
     radius[i] *= 0.5;
     maxradius = MAX(maxradius,radius[i]);
@@ -726,12 +739,8 @@ void Molecule::masses(char *line)
   int tmp;
   for (int i = 0; i < natoms; i++) {
     readline(line);
-    if (i == 0) {
-      int nwords = atom->count_words(line);
-      if (nwords != 2)
-        error->all(FLERR,"Invalid Masses section in molecule file");
-    }
-    sscanf(line,"%d %lg",&tmp,&rmass[i]);
+    if (2 != sscanf(line,"%d %lg",&tmp,&rmass[i]))
+      error->all(FLERR,"Invalid Masses section in molecule file");
     rmass[i] *= sizescale*sizescale*sizescale;
   }
 
@@ -760,19 +769,15 @@ void Molecule::bonds(int flag, char *line)
 
   for (int i = 0; i < nbonds; i++) {
     readline(line);
-    if (i == 0) {
-      int nwords = atom->count_words(line);
-      if (nwords != 4)
-        error->all(FLERR,"Invalid Bonds section in molecule file");
-    }
-    sscanf(line,"%d %d " TAGINT_FORMAT " " TAGINT_FORMAT,
-           &tmp,&itype,&atom1,&atom2);
+    if (4 != sscanf(line,"%d %d " TAGINT_FORMAT " " TAGINT_FORMAT,
+           &tmp,&itype,&atom1,&atom2))
+      error->all(FLERR,"Invalid Bonds section in molecule file");
     itype += boffset;
 
-    if (atom1 <= 0 || atom1 > natoms ||
-	atom2 <= 0 || atom2 > natoms)
+    if ((atom1 <= 0) || (atom1 > natoms) ||
+        (atom2 <= 0) || (atom2 > natoms) || (atom1 == atom2))
       error->one(FLERR,"Invalid atom ID in Bonds section of molecule file");
-    if (itype <= 0)
+    if (itype <= 0 || itype > atom->nbondtypes)
       error->one(FLERR,"Invalid bond type in Bonds section of molecule file");
 
     if (flag) {
@@ -782,10 +787,10 @@ void Molecule::bonds(int flag, char *line)
       bond_atom[m][num_bond[m]] = atom2;
       num_bond[m]++;
       if (newton_bond == 0) {
-	m = atom2-1;
-	bond_type[m][num_bond[m]] = itype;
-	bond_atom[m][num_bond[m]] = atom1;
-	num_bond[m]++;
+        m = atom2-1;
+        bond_type[m][num_bond[m]] = itype;
+        bond_atom[m][num_bond[m]] = atom1;
+        num_bond[m]++;
       }
     } else {
       count[atom1-1]++;
@@ -822,20 +827,17 @@ void Molecule::angles(int flag, char *line)
 
   for (int i = 0; i < nangles; i++) {
     readline(line);
-    if (i == 0) {
-      int nwords = atom->count_words(line);
-      if (nwords != 5)
-        error->all(FLERR,"Invalid Angles section in molecule file");
-    }
-    sscanf(line,"%d %d " TAGINT_FORMAT " " TAGINT_FORMAT " " TAGINT_FORMAT,
-           &tmp,&itype,&atom1,&atom2,&atom3);
+    if (5 != sscanf(line,"%d %d " TAGINT_FORMAT " " TAGINT_FORMAT " " TAGINT_FORMAT,
+           &tmp,&itype,&atom1,&atom2,&atom3))
+      error->all(FLERR,"Invalid Angles section in molecule file");
     itype += aoffset;
 
-    if (atom1 <= 0 || atom1 > natoms ||
-        atom2 <= 0 || atom2 > natoms ||
-        atom3 <= 0 || atom3 > natoms)
+    if ((atom1 <= 0) || (atom1 > natoms) ||
+        (atom2 <= 0) || (atom2 > natoms) ||
+        (atom3 <= 0) || (atom3 > natoms) ||
+        (atom1 == atom2) || (atom1 == atom3) || (atom2 == atom3))
       error->one(FLERR,"Invalid atom ID in Angles section of molecule file");
-    if (itype <= 0)
+    if (itype <= 0 || itype > atom->nangletypes)
       error->one(FLERR,"Invalid angle type in Angles section of molecule file");
 
     if (flag) {
@@ -847,24 +849,24 @@ void Molecule::angles(int flag, char *line)
       angle_atom3[m][num_angle[m]] = atom3;
       num_angle[m]++;
       if (newton_bond == 0) {
-	m = atom1-1;
-	angle_type[m][num_angle[m]] = itype;
-	angle_atom1[m][num_angle[m]] = atom1;
-	angle_atom2[m][num_angle[m]] = atom2;
-	angle_atom3[m][num_angle[m]] = atom3;
-	num_angle[m]++;
-	m = atom3-1;
-	angle_type[m][num_angle[m]] = itype;
-	angle_atom1[m][num_angle[m]] = atom1;
-	angle_atom2[m][num_angle[m]] = atom2;
-	angle_atom3[m][num_angle[m]] = atom3;
-	num_angle[m]++;
+        m = atom1-1;
+        angle_type[m][num_angle[m]] = itype;
+        angle_atom1[m][num_angle[m]] = atom1;
+        angle_atom2[m][num_angle[m]] = atom2;
+        angle_atom3[m][num_angle[m]] = atom3;
+        num_angle[m]++;
+        m = atom3-1;
+        angle_type[m][num_angle[m]] = itype;
+        angle_atom1[m][num_angle[m]] = atom1;
+        angle_atom2[m][num_angle[m]] = atom2;
+        angle_atom3[m][num_angle[m]] = atom3;
+        num_angle[m]++;
       }
     } else {
       count[atom2-1]++;
       if (newton_bond == 0) {
-	count[atom1-1]++;
-	count[atom3-1]++;
+        count[atom1-1]++;
+        count[atom3-1]++;
       }
     }
   }
@@ -898,25 +900,23 @@ void Molecule::dihedrals(int flag, char *line)
 
   for (int i = 0; i < ndihedrals; i++) {
     readline(line);
-    if (i == 0) {
-      int nwords = atom->count_words(line);
-      if (nwords != 6)
-        error->all(FLERR,"Invalid Dihedrals section in molecule file");
-    }
-    sscanf(line,"%d %d " TAGINT_FORMAT " " TAGINT_FORMAT " "
+    if (6 != sscanf(line,"%d %d " TAGINT_FORMAT " " TAGINT_FORMAT " "
            TAGINT_FORMAT " " TAGINT_FORMAT " ",
-           &tmp,&itype,&atom1,&atom2,&atom3,&atom4);
+           &tmp,&itype,&atom1,&atom2,&atom3,&atom4))
+      error->all(FLERR,"Invalid Dihedrals section in molecule file");
     itype += doffset;
 
-    if (atom1 <= 0 || atom1 > natoms ||
-        atom2 <= 0 || atom2 > natoms ||
-        atom3 <= 0 || atom3 > natoms ||
-        atom4 <= 0 || atom4 > natoms)
+    if ((atom1 <= 0) || (atom1 > natoms) ||
+        (atom2 <= 0) || (atom2 > natoms) ||
+        (atom3 <= 0) || (atom3 > natoms) ||
+        (atom4 <= 0) || (atom4 > natoms) ||
+        (atom1 == atom2) || (atom1 == atom3) || (atom1 == atom4) ||
+        (atom2 == atom3) || (atom2 == atom4) || (atom3 == atom4))
       error->one(FLERR,
-		 "Invalid atom ID in dihedrals section of molecule file");
-    if (itype <= 0)
+                 "Invalid atom ID in dihedrals section of molecule file");
+    if (itype <= 0 || itype > atom->ndihedraltypes)
       error->one(FLERR,
-		 "Invalid dihedral type in dihedrals section of molecule file");
+                 "Invalid dihedral type in dihedrals section of molecule file");
 
     if (flag) {
       m = atom2-1;
@@ -928,34 +928,34 @@ void Molecule::dihedrals(int flag, char *line)
       dihedral_atom4[m][num_dihedral[m]] = atom4;
       num_dihedral[m]++;
       if (newton_bond == 0) {
-	m = atom1-1;
-	dihedral_type[m][num_dihedral[m]] = itype;
-	dihedral_atom1[m][num_dihedral[m]] = atom1;
-	dihedral_atom2[m][num_dihedral[m]] = atom2;
-	dihedral_atom3[m][num_dihedral[m]] = atom3;
-	dihedral_atom4[m][num_dihedral[m]] = atom4;
-	num_dihedral[m]++;
-	m = atom3-1;
-	dihedral_type[m][num_dihedral[m]] = itype;
-	dihedral_atom1[m][num_dihedral[m]] = atom1;
-	dihedral_atom2[m][num_dihedral[m]] = atom2;
-	dihedral_atom3[m][num_dihedral[m]] = atom3;
-	dihedral_atom4[m][num_dihedral[m]] = atom4;
-	num_dihedral[m]++;
-	m = atom4-1;
-	dihedral_type[m][num_dihedral[m]] = itype;
-	dihedral_atom1[m][num_dihedral[m]] = atom1;
-	dihedral_atom2[m][num_dihedral[m]] = atom2;
-	dihedral_atom3[m][num_dihedral[m]] = atom3;
-	dihedral_atom4[m][num_dihedral[m]] = atom4;
-	num_dihedral[m]++;
+        m = atom1-1;
+        dihedral_type[m][num_dihedral[m]] = itype;
+        dihedral_atom1[m][num_dihedral[m]] = atom1;
+        dihedral_atom2[m][num_dihedral[m]] = atom2;
+        dihedral_atom3[m][num_dihedral[m]] = atom3;
+        dihedral_atom4[m][num_dihedral[m]] = atom4;
+        num_dihedral[m]++;
+        m = atom3-1;
+        dihedral_type[m][num_dihedral[m]] = itype;
+        dihedral_atom1[m][num_dihedral[m]] = atom1;
+        dihedral_atom2[m][num_dihedral[m]] = atom2;
+        dihedral_atom3[m][num_dihedral[m]] = atom3;
+        dihedral_atom4[m][num_dihedral[m]] = atom4;
+        num_dihedral[m]++;
+        m = atom4-1;
+        dihedral_type[m][num_dihedral[m]] = itype;
+        dihedral_atom1[m][num_dihedral[m]] = atom1;
+        dihedral_atom2[m][num_dihedral[m]] = atom2;
+        dihedral_atom3[m][num_dihedral[m]] = atom3;
+        dihedral_atom4[m][num_dihedral[m]] = atom4;
+        num_dihedral[m]++;
       }
     } else {
       count[atom2-1]++;
       if (newton_bond == 0) {
-	count[atom1-1]++;
-	count[atom3-1]++;
-	count[atom4-1]++;
+        count[atom1-1]++;
+        count[atom3-1]++;
+        count[atom4-1]++;
       }
     }
   }
@@ -989,25 +989,23 @@ void Molecule::impropers(int flag, char *line)
 
   for (int i = 0; i < nimpropers; i++) {
     readline(line);
-    if (i == 0) {
-      int nwords = atom->count_words(line);
-      if (nwords != 6)
-        error->all(FLERR,"Invalid Impropers section in molecule file");
-    }
-    sscanf(line,"%d %d " TAGINT_FORMAT " " TAGINT_FORMAT " "
+    if (6 != sscanf(line,"%d %d " TAGINT_FORMAT " " TAGINT_FORMAT " "
            TAGINT_FORMAT " " TAGINT_FORMAT " ",
-           &tmp,&itype,&atom1,&atom2,&atom3,&atom4);
+           &tmp,&itype,&atom1,&atom2,&atom3,&atom4))
+      error->all(FLERR,"Invalid Impropers section in molecule file");
     itype += ioffset;
 
-    if (atom1 <= 0 || atom1 > natoms ||
-        atom2 <= 0 || atom2 > natoms ||
-        atom3 <= 0 || atom3 > natoms ||
-        atom4 <= 0 || atom4 > natoms)
+    if ((atom1 <= 0) || (atom1 > natoms) ||
+        (atom2 <= 0) || (atom2 > natoms) ||
+        (atom3 <= 0) || (atom3 > natoms) ||
+        (atom4 <= 0) || (atom4 > natoms) ||
+        (atom1 == atom2) || (atom1 == atom3) || (atom1 == atom4) ||
+        (atom2 == atom3) || (atom2 == atom4) || (atom3 == atom4))
       error->one(FLERR,
-		 "Invalid atom ID in impropers section of molecule file");
-    if (itype <= 0)
+                 "Invalid atom ID in impropers section of molecule file");
+    if (itype <= 0 || itype > atom->nimpropertypes)
       error->one(FLERR,
-		 "Invalid improper type in impropers section of molecule file");
+                 "Invalid improper type in impropers section of molecule file");
 
     if (flag) {
       m = atom2-1;
@@ -1019,34 +1017,34 @@ void Molecule::impropers(int flag, char *line)
       improper_atom4[m][num_improper[m]] = atom4;
       num_improper[m]++;
       if (newton_bond == 0) {
-	m = atom1-1;
-	improper_type[m][num_improper[m]] = itype;
-	improper_atom1[m][num_improper[m]] = atom1;
-	improper_atom2[m][num_improper[m]] = atom2;
-	improper_atom3[m][num_improper[m]] = atom3;
-	improper_atom4[m][num_improper[m]] = atom4;
-	num_improper[m]++;
-	m = atom3-1;
-	improper_type[m][num_improper[m]] = itype;
-	improper_atom1[m][num_improper[m]] = atom1;
-	improper_atom2[m][num_improper[m]] = atom2;
-	improper_atom3[m][num_improper[m]] = atom3;
-	improper_atom4[m][num_improper[m]] = atom4;
-	num_improper[m]++;
-	m = atom4-1;
-	improper_type[m][num_improper[m]] = itype;
-	improper_atom1[m][num_improper[m]] = atom1;
-	improper_atom2[m][num_improper[m]] = atom2;
-	improper_atom3[m][num_improper[m]] = atom3;
-	improper_atom4[m][num_improper[m]] = atom4;
-	num_improper[m]++;
+        m = atom1-1;
+        improper_type[m][num_improper[m]] = itype;
+        improper_atom1[m][num_improper[m]] = atom1;
+        improper_atom2[m][num_improper[m]] = atom2;
+        improper_atom3[m][num_improper[m]] = atom3;
+        improper_atom4[m][num_improper[m]] = atom4;
+        num_improper[m]++;
+        m = atom3-1;
+        improper_type[m][num_improper[m]] = itype;
+        improper_atom1[m][num_improper[m]] = atom1;
+        improper_atom2[m][num_improper[m]] = atom2;
+        improper_atom3[m][num_improper[m]] = atom3;
+        improper_atom4[m][num_improper[m]] = atom4;
+        num_improper[m]++;
+        m = atom4-1;
+        improper_type[m][num_improper[m]] = itype;
+        improper_atom1[m][num_improper[m]] = atom1;
+        improper_atom2[m][num_improper[m]] = atom2;
+        improper_atom3[m][num_improper[m]] = atom3;
+        improper_atom4[m][num_improper[m]] = atom4;
+        num_improper[m]++;
       }
     } else {
       count[atom2-1]++;
       if (newton_bond == 0) {
-	count[atom1-1]++;
-	count[atom3-1]++;
-	count[atom4-1]++;
+        count[atom1-1]++;
+        count[atom3-1]++;
+        count[atom4-1]++;
       }
     }
   }
@@ -1074,13 +1072,9 @@ void Molecule::nspecial_read(int flag, char *line)
 
   for (int i = 0; i < natoms; i++) {
     readline(line);
-    if (i == 0) {
-      int nwords = atom->count_words(line);
-      if (nwords != 4)
-        error->all(FLERR,"Invalid Special Bond Counts section in "
-                   "molecule file");
-    }
-    sscanf(line,"%d %d %d %d",&tmp,&c1,&c2,&c3);
+    if (4 != sscanf(line,"%d %d %d %d",&tmp,&c1,&c2,&c3))
+      error->all(FLERR,"Invalid Special Bond Counts section in "
+                 "molecule file");
 
     if (flag) {
       nspecial[i][0] = c1;
@@ -1104,13 +1098,13 @@ void Molecule::special_read(char *line)
     nwords = parse(line,words,maxspecial+1);
     if (nwords != nspecial[i][2]+1)
       error->all(FLERR,"Molecule file special list "
-		 "does not match special count");
+                 "does not match special count");
 
     for (m = 1; m < nwords; m++) {
       special[i][m-1] = ATOTAGINT(words[m]);
       if (special[i][m-1] <= 0 || special[i][m-1] > natoms ||
-	  special[i][m-1] == i+1)
-	error->all(FLERR,"Invalid special atom index in molecule file");
+          special[i][m-1] == i+1)
+        error->all(FLERR,"Invalid special atom index in molecule file");
     }
   }
 
@@ -1125,7 +1119,13 @@ void Molecule::special_generate()
 {
   int newton_bond = force->newton_bond;
   tagint atom1,atom2;
-  int count[natoms];
+  int *count = new int[natoms];
+
+  // temporary array for special atoms
+
+  tagint **tmpspecial;
+  memory->create(tmpspecial,natoms,atom->maxspecial,"molecule:tmpspecial");
+  memset(&tmpspecial[0][0],0,sizeof(tagint)*natoms*atom->maxspecial);
 
   for (int i = 0; i < natoms; i++) count[i] = 0;
 
@@ -1138,10 +1138,10 @@ void Molecule::special_generate()
         atom2 = bond_atom[i][j]-1;
         nspecial[i][0]++;
         nspecial[atom2][0]++;
-        if (count[i] >= maxspecial || count[atom2] >= maxspecial)
+        if (count[i] >= atom->maxspecial || count[atom2] >= atom->maxspecial)
           error->one(FLERR,"Molecule auto special bond generation overflow");
-        special[i][count[i]++] = atom2 + 1;
-        special[atom2][count[atom2]++] = i + 1;
+        tmpspecial[i][count[i]++] = atom2 + 1;
+        tmpspecial[atom2][count[atom2]++] = i + 1;
       }
     }
   } else {
@@ -1150,9 +1150,9 @@ void Molecule::special_generate()
       for (int j = 0; j < num_bond[i]; j++) {
         atom1 = i;
         atom2 = bond_atom[i][j];
-        if (count[atom1] >= maxspecial)
+        if (count[atom1] >= atom->maxspecial)
           error->one(FLERR,"Molecule auto special bond generation overflow");
-        special[i][count[atom1]++] = atom2;
+        tmpspecial[i][count[atom1]++] = atom2;
       }
     }
   }
@@ -1164,18 +1164,18 @@ void Molecule::special_generate()
   int dedup;
   for (int i = 0; i < natoms; i++) {
     for (int m = 0; m < nspecial[i][0]; m++) {
-      for (int j = 0; j < nspecial[special[i][m]-1][0]; j++) {
+      for (int j = 0; j < nspecial[tmpspecial[i][m]-1][0]; j++) {
         dedup = 0;
         for (int k =0; k < count[i]; k++) {
-          if (special[special[i][m]-1][j] == special[i][k] ||
-              special[special[i][m]-1][j] == i+1) {
+          if (tmpspecial[tmpspecial[i][m]-1][j] == tmpspecial[i][k] ||
+              tmpspecial[tmpspecial[i][m]-1][j] == i+1) {
             dedup = 1;
           }
         }
         if (!dedup) {
-          if (count[i] >= maxspecial)
+          if (count[i] >= atom->maxspecial)
             error->one(FLERR,"Molecule auto special bond generation overflow");
-          special[i][count[i]++] = special[special[i][m]-1][j];
+          tmpspecial[i][count[i]++] = tmpspecial[tmpspecial[i][m]-1][j];
           nspecial[i][1]++;
         }
       }
@@ -1188,23 +1188,35 @@ void Molecule::special_generate()
 
   for (int i = 0; i < natoms; i++) {
     for (int m = nspecial[i][0]; m < nspecial[i][1]; m++) {
-      for (int j = 0; j < nspecial[special[i][m]-1][0]; j++) {
+      for (int j = 0; j < nspecial[tmpspecial[i][m]-1][0]; j++) {
         dedup = 0;
         for (int k =0; k < count[i]; k++) {
-          if (special[special[i][m]-1][j] == special[i][k] ||
-              special[special[i][m]-1][j] == i+1) {
+          if (tmpspecial[tmpspecial[i][m]-1][j] == tmpspecial[i][k] ||
+              tmpspecial[tmpspecial[i][m]-1][j] == i+1) {
             dedup = 1;
           }
         }
         if (!dedup) {
-          if (count[i] >= maxspecial)
+          if (count[i] >= atom->maxspecial)
             error->one(FLERR,"Molecule auto special bond generation overflow");
-          special[i][count[i]++] = special[special[i][m]-1][j];
+          tmpspecial[i][count[i]++] = tmpspecial[tmpspecial[i][m]-1][j];
           nspecial[i][2]++;
         }
       }
     }
   }
+  delete[] count;
+
+  maxspecial = 0;
+  for (int i = 0; i < natoms; i++)
+    maxspecial = MAX(maxspecial,nspecial[i][2]);
+
+  memory->create(special,natoms,maxspecial,"molecule:special");
+  for (int i = 0; i < natoms; i++)
+    for (int j = 0; j < nspecial[i][2]; j++)
+      special[i][j] = tmpspecial[i][j];
+
+  memory->destroy(tmpspecial);
 }
 
 /* ----------------------------------------------------------------------
@@ -1216,7 +1228,8 @@ void Molecule::shakeflag_read(char *line)
   int tmp;
   for (int i = 0; i < natoms; i++) {
     readline(line);
-    sscanf(line,"%d %d",&tmp,&shake_flag[i]);
+    if (2 != sscanf(line,"%d %d",&tmp,&shake_flag[i]))
+      error->all(FLERR,"Invalid Shake Flags section in molecule file");
   }
 
   for (int i = 0; i < natoms; i++)
@@ -1230,23 +1243,32 @@ void Molecule::shakeflag_read(char *line)
 
 void Molecule::shakeatom_read(char *line)
 {
-  int tmp;
+  int tmp, nmatch=0, nwant=0;
   for (int i = 0; i < natoms; i++) {
     readline(line);
-    if (shake_flag[i] == 1)
-      sscanf(line,"%d " TAGINT_FORMAT " " TAGINT_FORMAT " " TAGINT_FORMAT,
-             &tmp,&shake_atom[i][0],&shake_atom[i][1],&shake_atom[i][2]);
-    else if (shake_flag[i] == 2)
-      sscanf(line,"%d " TAGINT_FORMAT " " TAGINT_FORMAT,
-             &tmp,&shake_atom[i][0],&shake_atom[i][1]);
-    else if (shake_flag[i] == 3)
-      sscanf(line,"%d " TAGINT_FORMAT " " TAGINT_FORMAT " " TAGINT_FORMAT,
-             &tmp,&shake_atom[i][0],&shake_atom[i][1],&shake_atom[i][2]);
-    else if (shake_flag[i] == 4)
-      sscanf(line,"%d " TAGINT_FORMAT " " TAGINT_FORMAT " "
-             TAGINT_FORMAT " " TAGINT_FORMAT,
-             &tmp,&shake_atom[i][0],&shake_atom[i][1],
-             &shake_atom[i][2],&shake_atom[i][3]);
+    if (shake_flag[i] == 1) {
+      nmatch = sscanf(line,"%d " TAGINT_FORMAT " " TAGINT_FORMAT
+                      " " TAGINT_FORMAT,&tmp,&shake_atom[i][0],
+                      &shake_atom[i][1],&shake_atom[i][2]);
+      nwant = 4;
+    } else if (shake_flag[i] == 2) {
+      nmatch = sscanf(line,"%d " TAGINT_FORMAT " " TAGINT_FORMAT,
+                      &tmp,&shake_atom[i][0],&shake_atom[i][1]);
+      nwant = 3;
+    } else if (shake_flag[i] == 3) {
+      nmatch = sscanf(line,"%d " TAGINT_FORMAT " " TAGINT_FORMAT
+                      " " TAGINT_FORMAT,&tmp,&shake_atom[i][0],
+                      &shake_atom[i][1],&shake_atom[i][2]);
+      nwant = 4;
+    } else if (shake_flag[i] == 4) {
+      nmatch = sscanf(line,"%d " TAGINT_FORMAT " " TAGINT_FORMAT " "
+                      TAGINT_FORMAT " " TAGINT_FORMAT,
+                      &tmp,&shake_atom[i][0],&shake_atom[i][1],
+                      &shake_atom[i][2],&shake_atom[i][3]);
+      nwant = 5;
+    }
+    if (nmatch != nwant)
+      error->all(FLERR,"Invalid shake atom in molecule file");
   }
 
   for (int i = 0; i < natoms; i++) {
@@ -1264,19 +1286,27 @@ void Molecule::shakeatom_read(char *line)
 
 void Molecule::shaketype_read(char *line)
 {
-  int tmp;
+  int tmp, nmatch=0, nwant=0;
   for (int i = 0; i < natoms; i++) {
     readline(line);
-    if (shake_flag[i] == 1)
-      sscanf(line,"%d %d %d %d",&tmp,
-             &shake_type[i][0],&shake_type[i][1],&shake_type[i][2]);
-    else if (shake_flag[i] == 2)
-      sscanf(line,"%d %d",&tmp,&shake_type[i][0]);
-    else if (shake_flag[i] == 3)
-      sscanf(line,"%d %d %d",&tmp,&shake_type[i][0],&shake_type[i][1]);
-    else if (shake_flag[i] == 4)
-      sscanf(line,"%d %d %d %d",&tmp,
-             &shake_type[i][0],&shake_type[i][1],&shake_type[i][2]);
+    if (shake_flag[i] == 1) {
+      nmatch = sscanf(line,"%d %d %d %d",&tmp,&shake_type[i][0],
+                      &shake_type[i][1],&shake_type[i][2]);
+      nwant = 4;
+    } else if (shake_flag[i] == 2) {
+      nmatch = sscanf(line,"%d %d",&tmp,&shake_type[i][0]);
+      nwant = 2;
+    } else if (shake_flag[i] == 3) {
+      nmatch = sscanf(line,"%d %d %d",&tmp,&shake_type[i][0],
+                      &shake_type[i][1]);
+      nwant = 3;
+    } else if (shake_flag[i] == 4) {
+      nmatch = sscanf(line,"%d %d %d %d",&tmp,&shake_type[i][0],
+                      &shake_type[i][1],&shake_type[i][2]);
+      nwant = 4;
+    }
+    if (nmatch != nwant)
+      error->all(FLERR,"Invalid shake type data in molecule file");
   }
 
   for (int i = 0; i < natoms; i++) {
@@ -1310,19 +1340,19 @@ void Molecule::body(int flag, int pflag, char *line)
     ncount = atom->count_words(line);
     if (ncount == 0)
       error->one(FLERR,"Too few values in body section of molecule file");
-    if (nword+ncount > nparam) 
+    if (nword+ncount > nparam)
       error->all(FLERR,"Too many values in body section of molecule file");
-    
+
     if (flag) {
       if (pflag == 0) {
         ibodyparams[nword++] = force->inumeric(FLERR,strtok(line," \t\n\r\f"));
         for (i = 1; i < ncount; i++)
-          ibodyparams[nword++] = 
+          ibodyparams[nword++] =
             force->inumeric(FLERR,strtok(NULL," \t\n\r\f"));
       } else {
         dbodyparams[nword++] = force->numeric(FLERR,strtok(line," \t\n\r\f"));
         for (i = 1; i < ncount; i++)
-          dbodyparams[nword++] = 
+          dbodyparams[nword++] =
             force->numeric(FLERR,strtok(NULL," \t\n\r\f"));
       }
     } else nword += ncount;
@@ -1382,7 +1412,7 @@ void Molecule::check_attributes(int flag)
       if (atom->maxspecial < onemol->maxspecial) mismatch = 1;
 
       if (mismatch)
-        error->all(FLERR,"Molecule toplogy/atom exceeds system topology/atom");
+        error->all(FLERR,"Molecule topology/atom exceeds system topology/atom");
     }
 
     // warn if molecule topology defined but no special settings
@@ -1467,7 +1497,7 @@ void Molecule::allocate()
   if (radiusflag) memory->create(radius,natoms,"molecule:radius");
   if (rmassflag) memory->create(rmass,natoms,"molecule:rmass");
 
-  // always allocate num_bond,num_angle,etc and special+nspecial
+  // always allocate num_bond,num_angle,etc and nspecial
   // even if not in molecule file, initialize to 0
   // this is so methods that use these arrays don't have to check they exist
 
@@ -1479,55 +1509,55 @@ void Molecule::allocate()
   for (int i = 0; i < natoms; i++) num_dihedral[i] = 0;
   memory->create(num_improper,natoms,"molecule:num_improper");
   for (int i = 0; i < natoms; i++) num_improper[i] = 0;
-
-  memory->create(special,natoms,maxspecial,"molecule:special");
-
   memory->create(nspecial,natoms,3,"molecule:nspecial");
   for (int i = 0; i < natoms; i++)
     nspecial[i][0] = nspecial[i][1] = nspecial[i][2] = 0;
 
+  if (specialflag)
+    memory->create(special,natoms,maxspecial,"molecule:special");
+
   if (bondflag) {
     memory->create(bond_type,natoms,bond_per_atom,
-		   "molecule:bond_type");
+                   "molecule:bond_type");
     memory->create(bond_atom,natoms,bond_per_atom,
-		   "molecule:bond_atom");
+                   "molecule:bond_atom");
   }
 
   if (angleflag) {
     memory->create(angle_type,natoms,angle_per_atom,
-		   "molecule:angle_type");
+                   "molecule:angle_type");
     memory->create(angle_atom1,natoms,angle_per_atom,
-		   "molecule:angle_atom1");
+                   "molecule:angle_atom1");
     memory->create(angle_atom2,natoms,angle_per_atom,
-		   "molecule:angle_atom2");
+                   "molecule:angle_atom2");
     memory->create(angle_atom3,natoms,angle_per_atom,
-		   "molecule:angle_atom3");
+                   "molecule:angle_atom3");
   }
 
   if (dihedralflag) {
     memory->create(dihedral_type,natoms,dihedral_per_atom,
-		   "molecule:dihedral_type");
+                   "molecule:dihedral_type");
     memory->create(dihedral_atom1,natoms,dihedral_per_atom,
-		   "molecule:dihedral_atom1");
+                   "molecule:dihedral_atom1");
     memory->create(dihedral_atom2,natoms,dihedral_per_atom,
-		   "molecule:dihedral_atom2");
+                   "molecule:dihedral_atom2");
     memory->create(dihedral_atom3,natoms,dihedral_per_atom,
-		   "molecule:dihedral_atom3");
+                   "molecule:dihedral_atom3");
     memory->create(dihedral_atom4,natoms,dihedral_per_atom,
-		   "molecule:dihedral_atom4");
+                   "molecule:dihedral_atom4");
   }
 
   if (improperflag) {
     memory->create(improper_type,natoms,improper_per_atom,
-		   "molecule:improper_type");
+                   "molecule:improper_type");
     memory->create(improper_atom1,natoms,improper_per_atom,
-		   "molecule:improper_atom1");
+                   "molecule:improper_atom1");
     memory->create(improper_atom2,natoms,improper_per_atom,
-		   "molecule:improper_atom2");
+                   "molecule:improper_atom2");
     memory->create(improper_atom3,natoms,improper_per_atom,
-		   "molecule:improper_atom3");
+                   "molecule:improper_atom3");
     memory->create(improper_atom4,natoms,improper_per_atom,
-		   "molecule:improper_atom4");
+                   "molecule:improper_atom4");
   }
 
   if (shakeflag) {
@@ -1602,7 +1632,7 @@ void Molecule::open(char *file)
   fp = fopen(file,"r");
   if (fp == NULL) {
     char str[128];
-    sprintf(str,"Cannot open molecule file %s",file);
+    snprintf(str,128,"Cannot open molecule file %s",file);
     error->one(FLERR,str);
   }
 }
@@ -1640,7 +1670,7 @@ void Molecule::parse_keyword(int flag, char *line, char *keyword)
     if (me == 0) {
       if (fgets(line,MAXLINE,fp) == NULL) eof = 1;
       while (eof == 0 && strspn(line," \t\n\r") == strlen(line)) {
-	if (fgets(line,MAXLINE,fp) == NULL) eof = 1;
+        if (fgets(line,MAXLINE,fp) == NULL) eof = 1;
       }
       if (fgets(keyword,MAXLINE,fp) == NULL) eof = 1;
     }

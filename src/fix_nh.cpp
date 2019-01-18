@@ -15,9 +15,9 @@
    Contributing authors: Mark Stevens (SNL), Aidan Thompson (SNL)
 ------------------------------------------------------------------------- */
 
-#include <string.h>
-#include <stdlib.h>
-#include <math.h>
+#include <cstring>
+#include <cstdlib>
+#include <cmath>
 #include "fix_nh.h"
 #include "math_extra.h"
 #include "atom.h"
@@ -50,7 +50,12 @@ enum{ISO,ANISO,TRICLINIC};
    NVT,NPH,NPT integrators for improved Nose-Hoover equations of motion
  ---------------------------------------------------------------------- */
 
-FixNH::FixNH(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
+FixNH::FixNH(LAMMPS *lmp, int narg, char **arg) :
+  Fix(lmp, narg, arg),
+  rfix(NULL), id_dilate(NULL), irregular(NULL), id_temp(NULL), id_press(NULL),
+  eta(NULL), eta_dot(NULL), eta_dotdot(NULL),
+  eta_mass(NULL), etap(NULL), etap_dot(NULL), etap_dotdot(NULL),
+  etap_mass(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal fix nvt/npt/nph command");
 
@@ -128,7 +133,7 @@ FixNH::FixNH(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
       t_target = t_start;
       t_stop = force->numeric(FLERR,arg[iarg+2]);
       t_period = force->numeric(FLERR,arg[iarg+3]);
-      if (t_start < 0.0 || t_stop <= 0.0)
+      if (t_start <= 0.0 || t_stop <= 0.0)
         error->all(FLERR,
                    "Target temperature for fix nvt/npt/nph cannot be 0.0");
       iarg += 4;
@@ -342,6 +347,21 @@ FixNH::FixNH(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
       fixedpoint[1] = force->numeric(FLERR,arg[iarg+2]);
       fixedpoint[2] = force->numeric(FLERR,arg[iarg+3]);
       iarg += 4;
+
+    // disc keyword is also parsed in fix/nh/sphere
+
+    } else if (strcmp(arg[iarg],"disc") == 0) {
+      iarg++;
+
+    // keywords erate, strain, and ext are also parsed in fix/nh/uef
+
+    } else if (strcmp(arg[iarg],"erate") == 0) {
+      iarg += 3;
+    } else if (strcmp(arg[iarg],"strain") == 0) {
+      iarg += 3;
+    } else if (strcmp(arg[iarg],"ext") == 0) {
+      iarg += 2;
+
     } else error->all(FLERR,"Illegal fix nvt/npt/nph command");
   }
 
@@ -438,7 +458,7 @@ FixNH::FixNH(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
     if (!atom->mu_flag)
       error->all(FLERR,"Using update dipole flag requires atom attribute mu");
   }
-  
+
   if ((tstat_flag && t_period <= 0.0) ||
       (p_flag[0] && p_period[0] <= 0.0) ||
       (p_flag[1] && p_period[1] <= 0.0) ||
@@ -473,8 +493,10 @@ FixNH::FixNH(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
 
     // pre_exchange only required if flips can occur due to shape changes
 
-    if (flipflag && (p_flag[3] || p_flag[4] || p_flag[5])) pre_exchange_flag = 1;
-    if (flipflag && (domain->yz != 0.0 || domain->xz != 0.0 || domain->xy != 0.0))
+    if (flipflag && (p_flag[3] || p_flag[4] || p_flag[5]))
+      pre_exchange_flag = 1;
+    if (flipflag && (domain->yz != 0.0 || domain->xz != 0.0 ||
+                     domain->xy != 0.0))
       pre_exchange_flag = 1;
   }
 
@@ -720,13 +742,13 @@ void FixNH::init()
    compute T,P before integrator starts
 ------------------------------------------------------------------------- */
 
-void FixNH::setup(int vflag)
+void FixNH::setup(int /*vflag*/)
 {
   // tdof needed by compute_temp_target()
 
   t_current = temperature->compute_scalar();
   tdof = temperature->dof;
-  
+
   // t_target is needed by NVT and NPT in compute_scalar()
   // If no thermostat or using fix nphug,
   // t_target must be defined by other means.
@@ -776,7 +798,7 @@ void FixNH::setup(int vflag)
 
   if (pstat_flag) {
     double kt = boltz * t_target;
-    double nkt = atom->natoms * kt;
+    double nkt = (atom->natoms + 1) * kt;
 
     for (int i = 0; i < 3; i++)
       if (p_flag[i])
@@ -798,7 +820,6 @@ void FixNH::setup(int vflag)
           (etap_mass[ich-1]*etap_dot[ich-1]*etap_dot[ich-1] -
            boltz * t_target) / etap_mass[ich];
     }
-
   }
 }
 
@@ -806,7 +827,7 @@ void FixNH::setup(int vflag)
    1st half of Verlet update
 ------------------------------------------------------------------------- */
 
-void FixNH::initial_integrate(int vflag)
+void FixNH::initial_integrate(int /*vflag*/)
 {
   // update eta_press_dot
 
@@ -883,9 +904,16 @@ void FixNH::final_integrate()
   t_current = temperature->compute_scalar();
   tdof = temperature->dof;
 
+  // need to recompute pressure to account for change in KE
+  // t_current is up-to-date, but compute_temperature is not
+  // compute appropriately coupled elements of mvv_current
+
   if (pstat_flag) {
     if (pstyle == ISO) pressure->compute_scalar();
-    else pressure->compute_vector();
+    else {
+      temperature->compute_vector();
+      pressure->compute_vector();
+    }
     couple();
     pressure->addstep(update->ntimestep+1);
   }
@@ -901,7 +929,7 @@ void FixNH::final_integrate()
 
 /* ---------------------------------------------------------------------- */
 
-void FixNH::initial_integrate_respa(int vflag, int ilevel, int iloop)
+void FixNH::initial_integrate_respa(int /*vflag*/, int ilevel, int /*iloop*/)
 {
   // set timesteps by level
 
@@ -970,7 +998,7 @@ void FixNH::initial_integrate_respa(int vflag, int ilevel, int iloop)
 
 /* ---------------------------------------------------------------------- */
 
-void FixNH::final_integrate_respa(int ilevel, int iloop)
+void FixNH::final_integrate_respa(int ilevel, int /*iloop*/)
 {
   // set timesteps by level
 
@@ -1013,12 +1041,18 @@ void FixNH::couple()
     p_current[2] = tensor[2];
   }
 
+  if (!std::isfinite(p_current[0]) || !std::isfinite(p_current[1]) || !std::isfinite(p_current[2]))
+    error->all(FLERR,"Non-numeric pressure - simulation unstable");
+
   // switch order from xy-xz-yz to Voigt
 
   if (pstyle == TRICLINIC) {
     p_current[3] = tensor[5];
     p_current[4] = tensor[4];
     p_current[5] = tensor[3];
+
+    if (!std::isfinite(p_current[3]) || !std::isfinite(p_current[4]) || !std::isfinite(p_current[5]))
+      error->all(FLERR,"Non-numeric pressure - simulation unstable");
   }
 }
 
@@ -1419,7 +1453,7 @@ double FixNH::compute_scalar()
   double volume;
   double energy;
   double kt = boltz * t_target;
-  double lkt_press = kt;
+  double lkt_press = 0.0;
   int ich;
   if (dimension == 3) volume = domain->xprd * domain->yprd * domain->zprd;
   else volume = domain->xprd * domain->yprd;
@@ -1450,15 +1484,21 @@ double FixNH::compute_scalar()
   //       sum is over barostatted dimensions
 
   if (pstat_flag) {
-    for (i = 0; i < 3; i++)
-      if (p_flag[i])
+    for (i = 0; i < 3; i++) {
+      if (p_flag[i]) {
         energy += 0.5*omega_dot[i]*omega_dot[i]*omega_mass[i] +
           p_hydro*(volume-vol0) / (pdim*nktv2p);
+        lkt_press += kt;
+      }
+    }
 
     if (pstyle == TRICLINIC) {
-      for (i = 3; i < 6; i++)
-        if (p_flag[i])
+      for (i = 3; i < 6; i++) {
+        if (p_flag[i]) {
           energy += 0.5*omega_dot[i]*omega_dot[i]*omega_mass[i];
+          lkt_press += kt;
+        }
+      }
     }
 
     // extra contributions from thermostat chain for barostat
@@ -1686,14 +1726,30 @@ void FixNH::reset_dt()
 void *FixNH::extract(const char *str, int &dim)
 {
   dim=0;
-  if (strcmp(str,"t_target") == 0) {
+  if (tstat_flag && strcmp(str,"t_target") == 0) {
     return &t_target;
-  } else if (strcmp(str,"mtchain") == 0) {
+  } else if (tstat_flag && strcmp(str,"t_start") == 0) {
+    return &t_start;
+  } else if (tstat_flag && strcmp(str,"t_stop") == 0) {
+    return &t_stop;
+  } else if (tstat_flag && strcmp(str,"mtchain") == 0) {
+    return &mtchain;
+  } else if (pstat_flag && strcmp(str,"mpchain") == 0) {
     return &mtchain;
   }
   dim=1;
-  if (strcmp(str,"eta") == 0) {
+  if (tstat_flag && strcmp(str,"eta") == 0) {
     return &eta;
+  } else if (pstat_flag && strcmp(str,"etap") == 0) {
+    return &eta;
+  } else if (pstat_flag && strcmp(str,"p_flag") == 0) {
+    return &p_flag;
+  } else if (pstat_flag && strcmp(str,"p_start") == 0) {
+    return &p_start;
+  } else if (pstat_flag && strcmp(str,"p_stop") == 0) {
+    return &p_stop;
+  } else if (pstat_flag && strcmp(str,"p_target") == 0) {
+    return &p_target;
   }
   return NULL;
 }
@@ -1775,15 +1831,15 @@ void FixNH::nhc_temp_integrate()
 
 void FixNH::nhc_press_integrate()
 {
-  int ich,i;
+  int ich,i,pdof;
   double expfac,factor_etap,kecurrent;
   double kt = boltz * t_target;
-  double lkt_press = kt;
+  double lkt_press;
 
   // Update masses, to preserve initial freq, if flag set
 
   if (omega_mass_flag) {
-    double nkt = atom->natoms * kt;
+    double nkt = (atom->natoms + 1) * kt;
     for (int i = 0; i < 3; i++)
       if (p_flag[i])
         omega_mass[i] = nkt/(p_freq[i]*p_freq[i]);
@@ -1807,14 +1863,23 @@ void FixNH::nhc_press_integrate()
   }
 
   kecurrent = 0.0;
+  pdof = 0;
   for (i = 0; i < 3; i++)
-    if (p_flag[i]) kecurrent += omega_mass[i]*omega_dot[i]*omega_dot[i];
+    if (p_flag[i]) {
+      kecurrent += omega_mass[i]*omega_dot[i]*omega_dot[i];
+      pdof++;
+    }
 
   if (pstyle == TRICLINIC) {
     for (i = 3; i < 6; i++)
-      if (p_flag[i]) kecurrent += omega_mass[i]*omega_dot[i]*omega_dot[i];
+      if (p_flag[i]) {
+        kecurrent += omega_mass[i]*omega_dot[i]*omega_dot[i];
+        pdof++;
+      }
   }
 
+  if (pstyle == ISO) lkt_press = kt;
+  else lkt_press = pdof * kt;
   etap_dotdot[0] = (kecurrent - lkt_press)/etap_mass[0];
 
   double ncfac = 1.0/nc_pchain;

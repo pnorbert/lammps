@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <string.h>
+#include <cstring>
 #include "compute_improper.h"
 #include "update.h"
 #include "force.h"
@@ -24,7 +24,8 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeImproper::ComputeImproper(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg),
+  emine(NULL)
 {
   if (narg != 3) error->all(FLERR,"Illegal compute improper command");
 
@@ -40,7 +41,7 @@ ComputeImproper::ComputeImproper(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR,
                "Improper style for compute improper command is not hybrid");
   size_vector = nsub = improper->nstyles;
-  
+
   emine = new double[nsub];
   vector = new double[nsub];
 }
@@ -63,7 +64,7 @@ void ComputeImproper::init()
   if (!improper)
     error->all(FLERR,
                "Improper style for compute improper command is not hybrid");
-  if (improper->nstyles != nsub) 
+  if (improper->nstyles != nsub)
     error->all(FLERR,"Improper style for compute improper command has changed");
 }
 

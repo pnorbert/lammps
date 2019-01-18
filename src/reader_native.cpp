@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
-#include <stdlib.h>
+#include <cstring>
+#include <cstdlib>
 #include "reader_native.h"
 #include "atom.h"
 #include "memory.h"
@@ -24,7 +24,7 @@ using namespace LAMMPS_NS;
 
 // also in read_dump.cpp
 
-enum{ID,TYPE,X,Y,Z,VX,VY,VZ,Q,IX,IY,IZ};
+enum{ID,TYPE,X,Y,Z,VX,VY,VZ,Q,IX,IY,IZ,FX,FY,FZ};
 enum{UNSET,NOSCALE_NOWRAP,NOSCALE_WRAP,SCALE_NOWRAP,SCALE_WRAP};
 
 /* ---------------------------------------------------------------------- */
@@ -253,6 +253,13 @@ bigint ReaderNative::read_header(double box[3][3], int &triclinic,
       fieldindex[i] = find_label("vy",nwords,labels);
     else if (fieldtype[i] == VZ)
       fieldindex[i] = find_label("vz",nwords,labels);
+
+    else if (fieldtype[i] == FX)
+      fieldindex[i] = find_label("fx",nwords,labels);
+    else if (fieldtype[i] == FY)
+      fieldindex[i] = find_label("fy",nwords,labels);
+    else if (fieldtype[i] == FZ)
+      fieldindex[i] = find_label("fz",nwords,labels);
 
     else if (fieldtype[i] == Q)
       fieldindex[i] = find_label("q",nwords,labels);

@@ -41,8 +41,8 @@ class ComputePairLocal : public Compute {
   int singleflag;
 
   int nmax;
-  double *vector;
-  double **array;
+  double *vlocal;
+  double **alocal;
 
   class NeighList *list;
 
@@ -66,6 +66,10 @@ command-line option when running LAMMPS to see the offending line.
 E: Invalid keyword in compute pair/local command
 
 Self-explanatory.
+
+E: Compute pair/local requires atom attribute radius
+
+UNDOCUMENTED
 
 E: No pair style is defined for compute pair/local
 

@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <string.h>
+#include <cstring>
 #include "compute_bond.h"
 #include "update.h"
 #include "force.h"
@@ -24,7 +24,8 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeBond::ComputeBond(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg),
+  emine(NULL)
 {
   if (narg != 3) error->all(FLERR,"Illegal compute bond command");
 
@@ -39,7 +40,7 @@ ComputeBond::ComputeBond(LAMMPS *lmp, int narg, char **arg) :
   if (!bond)
     error->all(FLERR,"Bond style for compute bond command is not hybrid");
   size_vector = nsub = bond->nstyles;
-  
+
   emine = new double[nsub];
   vector = new double[nsub];
 }
@@ -61,7 +62,7 @@ void ComputeBond::init()
   bond = (BondHybrid *) force->bond_match("hybrid");
   if (!bond)
     error->all(FLERR,"Bond style for compute bond command is not hybrid");
-  if (bond->nstyles != nsub) 
+  if (bond->nstyles != nsub)
     error->all(FLERR,"Bond style for compute bond command has changed");
 }
 

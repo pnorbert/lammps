@@ -21,11 +21,11 @@
    The Journal of Chemical Physics, 2016, 144, 104501.
 ------------------------------------------------------------------------------------------- */
 
-#include "mpi.h"
-#include <math.h>
+#include <mpi.h>
+#include <cmath>
 #include "math_const.h"
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "pair_multi_lucy.h"
 #include "atom.h"
 #include "force.h"
@@ -54,7 +54,8 @@ static const char cite_pair_multi_lucy[] =
 
 /* ---------------------------------------------------------------------- */
 
-PairMultiLucy::PairMultiLucy(LAMMPS *lmp) : Pair(lmp)
+PairMultiLucy::PairMultiLucy(LAMMPS *lmp) : Pair(lmp),
+  ntables(0), tables(NULL), tabindex(NULL)
 {
   if (lmp->citeme) lmp->citeme->add(cite_pair_multi_lucy);
 
@@ -181,7 +182,7 @@ void PairMultiLucy::compute(int eflag, int vflag)
           f[j][2] -= delz*fpair;
         }
         if (evflag) ev_tally(i,j,nlocal,newton_pair,
-        		     0.0,0.0,fpair,delx,dely,delz);
+                             0.0,0.0,fpair,delx,dely,delz);
       }
     }
 
@@ -200,7 +201,7 @@ void PairMultiLucy::compute(int eflag, int vflag)
     evdwl *=(pi*cutsq[itype][itype]*cutsq[itype][itype])/84.0;
 
     if (evflag) ev_tally(0,0,nlocal,newton_pair,
-        		 evdwl,0.0,0.0,0.0,0.0,0.0);
+                         evdwl,0.0,0.0,0.0,0.0,0.0);
   }
 
  if (vflag_fdotr) virial_fdotr_compute();
@@ -267,8 +268,8 @@ void PairMultiLucy::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   int me;
   MPI_Comm_rank(world,&me);
@@ -349,7 +350,7 @@ void PairMultiLucy::read_table(Table *tb, char *file, char *keyword)
   FILE *fp = fopen(file,"r");
   if (fp == NULL) {
     char str[128];
-    sprintf(str,"Cannot open file %s",file);
+    snprintf(str,128,"Cannot open file %s",file);
     error->one(FLERR,str);
   }
 
@@ -780,7 +781,7 @@ void PairMultiLucy::computeLocalDensity()
 }
 /* ---------------------------------------------------------------------- */
 
-int PairMultiLucy::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, int *pbc)
+int PairMultiLucy::pack_forward_comm(int n, int *list, double *buf, int /*pbc_flag*/, int * /*pbc*/)
 {
   int i,j,m;
   double *rho = atom->rho;

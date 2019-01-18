@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -31,11 +31,10 @@ fix 1 all external pf/array 10 :pre
 [Description:]
 
 This fix allows external programs that are running LAMMPS through its
-"library interface"_Section_howto.html#howto_19 to modify certain
-LAMMPS properties on specific timesteps, similar to the way other
-fixes do.  The external driver can be a "C/C++ or Fortran
-program"_Section_howto.html#howto_19 or a "Python
-script"_Section_python.html.
+"library interface"_Howto_library.html to modify certain LAMMPS
+properties on specific timesteps, similar to the way other fixes do.
+The external driver can be a "C/C++ or Fortran
+program"_Howto_library.html or a "Python script"_Python_head.html.
 
 :line
 
@@ -120,7 +119,7 @@ insure this energy setting is used appropriately in a minimization.
 [Restart, fix_modify, output, run start/stop, minimize info:]
 
 No information about this fix is written to "binary restart
-files"_restart.html.  
+files"_restart.html.
 
 The "fix_modify"_fix_modify.html {energy} option is supported by this
 fix to add the potential "energy" set by the external driver to the
@@ -131,16 +130,20 @@ forces added by this fix in a consistent manner.  I.e. there is a
 decrease in potential energy when atoms move in the direction of the
 added force.
 
+The "fix_modify"_fix_modify.html {virial} option is supported by this
+fix to add the contribution due to the interactions computed by the
+external program to the system's virial as part of "thermodynamic
+output"_thermo_style.html. The default is {virial yes}
+
 This fix computes a global scalar which can be accessed by various
-"output commands"_Section_howto.html#howto_15.  The scalar is the
-potential energy discussed above.  The scalar stored by this fix
-is "extensive".
+"output commands"_Howto_output.html.  The scalar is the potential
+energy discussed above.  The scalar stored by this fix is "extensive".
 
 No parameter of this fix can be used with the {start/stop} keywords of
 the "run"_run.html command.
 
 The forces due to this fix are imposed during an energy minimization,
-invoked by the "minimize"_minimize.html command. 
+invoked by the "minimize"_minimize.html command.
 
 NOTE: If you want the fictitious potential energy associated with the
 added forces to be included in the total potential energy of the

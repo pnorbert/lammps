@@ -11,10 +11,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_morse_soft.h"
 #include "atom.h"
 #include "comm.h"
@@ -116,7 +116,7 @@ void PairMorseSoft::compute(int eflag, int vflag)
           // Force computation:
           fpair = 3.0*a*B*dexp3*s1 + 2.0*a*D*(dexp2 - dexp);
           fpair /= r;
-        }else{
+        } else {
           llf = MathSpecial::powint( l / shift_range, nlambda );
           phi = V0 + B*dexp3;
           phi *= llf;
@@ -124,7 +124,7 @@ void PairMorseSoft::compute(int eflag, int vflag)
           // Force computation:
           if (r == 0.0){
             fpair = 0.0;
-          }else{
+          } else {
             fpair = 3.0*a*B*dexp3 + 2.0*a*D*(dexp2 - dexp);
             fpair *= llf / r;
           }
@@ -178,8 +178,8 @@ void PairMorseSoft::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double d0_one     = force->numeric(FLERR,arg[2]);
   double alpha_one  = force->numeric(FLERR,arg[3]);
@@ -222,7 +222,7 @@ void PairMorseSoft::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
+      for (j = i; j <= atom->ntypes; j++)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 }
@@ -234,7 +234,8 @@ void PairMorseSoft::settings(int narg, char **arg)
 
 double PairMorseSoft::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR,"All pair coeffs are not set");
 
   morse1[i][j] = 2.0*d0[i][j]*alpha[i][j];
 
@@ -259,8 +260,7 @@ double PairMorseSoft::init_one(int i, int j)
     if (l >= shift_range){
       s1  = (l - 1.0) / (shift_range - 1.0);
       offset[i][j] = V0 + B*dexp3 * s1;
-
-    }else{
+    } else {
       llf = MathSpecial::powint( l / shift_range, nlambda );
       offset[i][j] = V0 + B*dexp3;
       offset[i][j] *= llf;
@@ -360,8 +360,8 @@ void PairMorseSoft::write_data_all(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double PairMorseSoft::single(int i, int j, int itype, int jtype, double rsq,
-                             double factor_coul, double factor_lj,
+double PairMorseSoft::single(int /*i*/, int /*j*/, int itype, int jtype, double rsq,
+                             double /*factor_coul*/, double factor_lj,
                              double &fforce)
 {
   double r, dr, dexp, dexp2, dexp3, phi;
@@ -392,7 +392,7 @@ double PairMorseSoft::single(int i, int j, int itype, int jtype, double rsq,
     // Force computation:
     fforce = 3.0*a*B*dexp3*s1 + 2.0*a*D*(dexp2 - dexp);
     fforce /= r;
-  }else{
+  } else {
     llf = MathSpecial::powint( l / shift_range, nlambda );
     phi = V0 + B*dexp3;
     phi *= llf;
@@ -400,7 +400,7 @@ double PairMorseSoft::single(int i, int j, int itype, int jtype, double rsq,
     // Force computation:
     if (r == 0.0){
       fforce = 0.0;
-    }else{
+    } else {
       fforce = 3.0*a*B*dexp3 + 2.0*a*D*(dexp2 - dexp);
       fforce *= llf / r;
     }

@@ -11,10 +11,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_coul_cut.h"
 #include "atom.h"
 #include "comm.h"
@@ -155,7 +155,7 @@ void PairCoulCut::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
+      for (j = i; j <= atom->ntypes; j++)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 }
@@ -171,8 +171,8 @@ void PairCoulCut::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double cut_one = cut_global;
   if (narg == 3) cut_one = force->numeric(FLERR,arg[2]);
@@ -284,8 +284,8 @@ void PairCoulCut::read_restart_settings(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double PairCoulCut::single(int i, int j, int itype, int jtype,
-                           double rsq, double factor_coul, double factor_lj,
+double PairCoulCut::single(int i, int j, int /*itype*/, int /*jtype*/,
+                           double rsq, double factor_coul, double /*factor_lj*/,
                            double &fforce)
 {
   double r2inv,rinv,forcecoul,phicoul;

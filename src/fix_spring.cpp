@@ -15,9 +15,9 @@
    Contributing author: Paul Crozier (SNL)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "fix_spring.h"
 #include "atom.h"
 #include "update.h"
@@ -37,7 +37,8 @@ enum{TETHER,COUPLE};
 /* ---------------------------------------------------------------------- */
 
 FixSpring::FixSpring(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  group2(NULL)
 {
   if (narg < 9) error->all(FLERR,"Illegal fix spring command");
 
@@ -50,8 +51,6 @@ FixSpring::FixSpring(LAMMPS *lmp, int narg, char **arg) :
   dynamic_group_allow = 1;
   respa_level_support = 1;
   ilevel_respa = 0;
-
-  group2 = NULL;
 
   if (strcmp(arg[3],"tether") == 0) {
     if (narg != 9) error->all(FLERR,"Illegal fix spring command");
@@ -160,7 +159,7 @@ void FixSpring::min_setup(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixSpring::post_force(int vflag)
+void FixSpring::post_force(int /*vflag*/)
 {
   if (styleflag == TETHER) spring_tether();
   else spring_couple();
@@ -336,7 +335,7 @@ void FixSpring::spring_couple()
 
 /* ---------------------------------------------------------------------- */
 
-void FixSpring::post_force_respa(int vflag, int ilevel, int iloop)
+void FixSpring::post_force_respa(int vflag, int ilevel, int /*iloop*/)
 {
   if (ilevel == ilevel_respa) post_force(vflag);
 }

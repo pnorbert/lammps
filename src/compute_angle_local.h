@@ -33,12 +33,16 @@ class ComputeAngleLocal : public Compute {
   double memory_usage();
 
  private:
-  int nvalues,tflag,eflag;
-  int ncount;
+  int nvalues,nvar,ncount,setflag,tflag;
+
+  int tvar;
+  int *bstyle,*vvar;
+  char *tstr;
+  char **vstr;
 
   int nmax;
-  double *vector;
-  double **array;
+  double *vlocal;
+  double **alocal;
 
   int compute_angles(int);
   void reallocate(int);

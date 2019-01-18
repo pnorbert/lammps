@@ -12,8 +12,8 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <string.h>
-#include <stdlib.h>
+#include <cstring>
+#include <cstdlib>
 #include "timer.h"
 #include "comm.h"
 #include "error.h"
@@ -22,13 +22,13 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <stdint.h>
+#include <stdint.h> // <cstdint> requires C++-11
 #else
 #include <sys/time.h>
 #include <sys/resource.h>
 #endif
 
-#include <time.h>
+#include <ctime>
 
 using namespace LAMMPS_NS;
 
@@ -95,7 +95,8 @@ Timer::Timer(LAMMPS *lmp) : Pointers(lmp)
 {
   _level = NORMAL;
   _sync  = OFF;
-  _timeout = -1.0;
+  _timeout = -1;
+  _s_timeout = -1;
   _checkfreq = 10;
   _nextcheck = -1;
   this->_stamp(RESET);
@@ -215,6 +216,7 @@ void Timer::set_wall(enum ttype which, double newtime)
 
 void Timer::init_timeout()
 {
+  _s_timeout = _timeout;
   if (_timeout < 0)
     _nextcheck = -1;
   else

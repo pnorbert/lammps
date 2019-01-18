@@ -15,10 +15,10 @@
    Contributing author: Andres Jaramillo-Botero
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_eff_cut.h"
 #include "pair_eff_inline.h"
 #include "atom.h"
@@ -846,7 +846,7 @@ void PairEffCut::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
+      for (j = i; j <= atom->ntypes; j++)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 }
@@ -891,8 +891,8 @@ void PairEffCut::coeff(int narg, char **arg)
 
   if ((strcmp(arg[0],"*") == 0) || (strcmp(arg[1],"*") == 0)) {
     int ilo,ihi,jlo,jhi;
-    force->bounds(arg[0],atom->ntypes,ilo,ihi);
-    force->bounds(arg[1],atom->ntypes,jlo,jhi);
+    force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+    force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
     double cut_one = cut_global;
     if (narg == 3) cut_one = force->numeric(FLERR,arg[2]);
@@ -1009,7 +1009,7 @@ void PairEffCut::read_restart_settings(FILE *fp)
    these arrays are stored locally by pair style
 ------------------------------------------------------------------------- */
 
-void PairEffCut::min_xf_pointers(int ignore, double **xextra, double **fextra)
+void PairEffCut::min_xf_pointers(int /*ignore*/, double **xextra, double **fextra)
 {
   // grow arrays if necessary
   // need to be atom->nmax in length
@@ -1031,7 +1031,7 @@ void PairEffCut::min_xf_pointers(int ignore, double **xextra, double **fextra)
    calculate and store in min_eradius and min_erforce
 ------------------------------------------------------------------------- */
 
-void PairEffCut::min_xf_get(int ignore)
+void PairEffCut::min_xf_get(int /*ignore*/)
 {
   double *eradius = atom->eradius;
   double *erforce = atom->erforce;
@@ -1050,7 +1050,7 @@ void PairEffCut::min_xf_get(int ignore)
    propagate the change back to eradius
 ------------------------------------------------------------------------- */
 
-void PairEffCut::min_x_set(int ignore)
+void PairEffCut::min_x_set(int /*ignore*/)
 {
   double *eradius = atom->eradius;
   int *spin = atom->spin;

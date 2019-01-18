@@ -5,6 +5,10 @@ mode=$1
 
 # arg1 = file, arg2 = file it depends on
 
+# enforce using portable C locale
+LC_ALL=C
+export LC_ALL
+
 action () {
   if (test $mode = 0) then
     rm -f ../$1
@@ -42,3 +46,5 @@ action pair_lj_long_coul_long_opt.cpp pair_lj_long_coul_long.cpp
 action pair_lj_long_coul_long_opt.h pair_lj_long_coul_long.cpp
 action pair_morse_opt.cpp
 action pair_morse_opt.h
+action pair_ufm_opt.cpp
+action pair_ufm_opt.h

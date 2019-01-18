@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
+#include <cstring>
 #include "fix_store_force.h"
 #include "atom.h"
 #include "update.h"
@@ -26,7 +26,8 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixStoreForce::FixStoreForce(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  foriginal(NULL)
 {
   if (narg < 3) error->all(FLERR,"Illegal fix store/coord command");
 
@@ -94,7 +95,7 @@ void FixStoreForce::min_setup(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixStoreForce::post_force(int vflag)
+void FixStoreForce::post_force(int /*vflag*/)
 {
   if (atom->nmax > nmax) {
     nmax = atom->nmax;
@@ -117,7 +118,7 @@ void FixStoreForce::post_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixStoreForce::post_force_respa(int vflag, int ilevel, int iloop)
+void FixStoreForce::post_force_respa(int vflag, int ilevel, int /*iloop*/)
 {
   if (ilevel == nlevels_respa-1) post_force(vflag);
 }

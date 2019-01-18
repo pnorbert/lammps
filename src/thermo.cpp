@@ -17,9 +17,9 @@
 
 #include "lmptype.h"
 #include <mpi.h>
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "thermo.h"
 #include "atom.h"
 #include "update.h"
@@ -55,7 +55,8 @@ using namespace MathConst;
 
 // customize a new keyword by adding to this list:
 
-// step, elapsed, elaplong, dt, time, cpu, tpcpu, spcpu, cpuremain, part, timeremain
+// step, elapsed, elaplong, dt, time, cpu, tpcpu, spcpu, cpuremain,
+// part, timeremain
 // atoms, temp, press, pe, ke, etotal, enthalpy
 // evdwl, ecoul, epair, ebond, eangle, edihed, eimp, emol, elong, etail
 // vol, density, lx, ly, lz, xlo, xhi, ylo, yhi, zlo, zhi, xy, xz, yz,
@@ -71,7 +72,6 @@ using namespace MathConst;
 #define ONE "step temp epair emol etotal press"
 #define MULTI "etotal ke temp pe ebond eangle edihed eimp evdwl ecoul elong press"
 
-enum{IGNORE,WARN,ERROR};           // same as several files
 enum{ONELINE,MULTILINE};
 enum{INT,FLOAT,BIGINT};
 enum{SCALAR,VECTOR,ARRAY};
@@ -97,7 +97,7 @@ Thermo::Thermo(LAMMPS *lmp, int narg, char **arg) : Pointers(lmp)
   modified = 0;
   normuserflag = 0;
   lineflag = ONELINE;
-  lostflag = lostbond = ERROR;
+  lostflag = lostbond = Thermo::ERROR;
   lostbefore = 0;
   flushflag = 0;
 
@@ -196,7 +196,7 @@ Thermo::~Thermo()
   deallocate();
 
   // format strings
-  
+
   delete [] format_line_user;
   delete [] format_float_user;
   delete [] format_int_user;
@@ -394,6 +394,20 @@ void Thermo::compute(int flag)
       if (flushflag) fflush(logfile);
     }
   }
+
+  // set to 1, so that subsequent invocations of CPU time will be non-zero
+  // e.g. via variables in print command
+
+  firststep = 1;
+}
+
+/* ----------------------------------------------------------------------
+   call function to compute property
+------------------------------------------------------------------------- */
+
+void Thermo::call_vfunc(int ifield)
+{
+  (this->*vfunc[ifield])();
 }
 
 /* ----------------------------------------------------------------------
@@ -412,14 +426,14 @@ bigint Thermo::lost_check()
   if (ntotal == atom->natoms) return ntotal;
 
   // if not checking or already warned, just return
-  if (lostflag == IGNORE) return ntotal;
-  if (lostflag == WARN && lostbefore == 1) {
+  if (lostflag == Thermo::IGNORE) return ntotal;
+  if (lostflag == Thermo::WARN && lostbefore == 1) {
     return ntotal;
   }
 
   // error message
 
-  if (lostflag == ERROR) {
+  if (lostflag == Thermo::ERROR) {
     char str[64];
     sprintf(str,
             "Lost atoms: original " BIGINT_FORMAT " current " BIGINT_FORMAT,
@@ -521,17 +535,17 @@ void Thermo::modify_params(int narg, char **arg)
 
     } else if (strcmp(arg[iarg],"lost") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal thermo_modify command");
-      if (strcmp(arg[iarg+1],"ignore") == 0) lostflag = IGNORE;
-      else if (strcmp(arg[iarg+1],"warn") == 0) lostflag = WARN;
-      else if (strcmp(arg[iarg+1],"error") == 0) lostflag = ERROR;
+      if (strcmp(arg[iarg+1],"ignore") == 0) lostflag = Thermo::IGNORE;
+      else if (strcmp(arg[iarg+1],"warn") == 0) lostflag = Thermo::WARN;
+      else if (strcmp(arg[iarg+1],"error") == 0) lostflag = Thermo::ERROR;
       else error->all(FLERR,"Illegal thermo_modify command");
       iarg += 2;
 
     } else if (strcmp(arg[iarg],"lost/bond") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal thermo_modify command");
-      if (strcmp(arg[iarg+1],"ignore") == 0) lostbond = IGNORE;
-      else if (strcmp(arg[iarg+1],"warn") == 0) lostbond = WARN;
-      else if (strcmp(arg[iarg+1],"error") == 0) lostbond = ERROR;
+      if (strcmp(arg[iarg+1],"ignore") == 0) lostbond = Thermo::IGNORE;
+      else if (strcmp(arg[iarg+1],"warn") == 0) lostbond = Thermo::WARN;
+      else if (strcmp(arg[iarg+1],"error") == 0) lostbond = Thermo::ERROR;
       else error->all(FLERR,"Illegal thermo_modify command");
       iarg += 2;
 
@@ -569,7 +583,7 @@ void Thermo::modify_params(int narg, char **arg)
         format_int_user = NULL;
         format_bigint_user = NULL;
         format_float_user = NULL;
-        for (int i = 0; i < nfield_initial; i++) {
+        for (int i = 0; i < nfield_initial+1; i++) {
           delete [] format_column_user[i];
           format_column_user[i] = NULL;
         }
@@ -610,7 +624,7 @@ void Thermo::modify_params(int narg, char **arg)
         strcpy(format_float_user,arg[iarg+2]);
       } else {
         int i = force->inumeric(FLERR,arg[iarg+1]) - 1;
-        if (i < 0 || i >= nfield_initial)
+        if (i < 0 || i >= nfield_initial+1)
           error->all(FLERR,"Illegal thermo_modify command");
         if (format_column_user[i]) delete [] format_column_user[i];
         int n = strlen(arg[iarg+2]) + 1;
@@ -994,6 +1008,7 @@ void Thermo::parse_fields(char *str)
 void Thermo::addfield(const char *key, FnPtr func, int typeflag)
 {
   int n = strlen(key) + 1;
+  delete[] keyword[nfield];
   keyword[nfield] = new char[n];
   strcpy(keyword[nfield],key);
   vfunc[nfield] = func;
@@ -1053,7 +1068,7 @@ int Thermo::add_variable(const char *id)
    compute a single thermodynamic value, word is any keyword in custom list
    called when a variable is evaluated by Variable class
    return value as double in answer
-   return 0 if str is recoginzed keyword, 1 if unrecognized
+   return 0 if str is recognized keyword, 1 if unrecognized
    customize a new keyword by adding to if statement
 ------------------------------------------------------------------------- */
 
@@ -1075,7 +1090,7 @@ int Thermo::evaluate_keyword(char *word, double *answer)
   //   this will trigger next timestep for energy tallying via addstep()
   //   this means keywords that use pe (pe, etotal, enthalpy)
   //     need to always invoke it even if invoked_flag is set,
-  //     because evdwl/etc may have set invoked_flag w/out 
+  //     because evdwl/etc may have set invoked_flag w/out
   //       actually invoking pe->compute_scalar()
 
   if (strcmp(word,"step") == 0) {
@@ -1136,6 +1151,22 @@ int Thermo::evaluate_keyword(char *word, double *answer)
 
   } else if (strcmp(word,"atoms") == 0) {
     compute_atoms();
+    dvalue = bivalue;
+
+  } else if (strcmp(word,"bonds") == 0) {
+    compute_bonds();
+    dvalue = bivalue;
+
+  } else if (strcmp(word,"angles") == 0) {
+    compute_angles();
+    dvalue = bivalue;
+
+  } else if (strcmp(word,"dihedrals") == 0) {
+    compute_dihedrals();
+    dvalue = bivalue;
+
+  } else if (strcmp(word,"impropers") == 0) {
+    compute_impropers();
     dvalue = bivalue;
 
   } else if (strcmp(word,"temp") == 0) {
@@ -1362,11 +1393,6 @@ int Thermo::evaluate_keyword(char *word, double *answer)
   else if (strcmp(word,"ylat") == 0) compute_ylat();
   else if (strcmp(word,"zlat") == 0) compute_zlat();
 
-  else if (strcmp(word,"bonds") == 0) compute_bonds();
-  else if (strcmp(word,"angles") == 0) compute_angles();
-  else if (strcmp(word,"dihedrals") == 0) compute_dihedrals();
-  else if (strcmp(word,"impropers") == 0) compute_impropers();
-
   else if (strcmp(word,"pxx") == 0) {
     if (!pressure)
       error->all(FLERR,"Thermo keyword in variable requires "
@@ -1544,7 +1570,7 @@ void Thermo::compute_variable()
     dvalue = input->variable->compute_equal(variables[field2index[ifield]]);
   else {
     double *varvec;
-    int nvec = 
+    int nvec =
       input->variable->compute_vector(variables[field2index[ifield]],&varvec);
     if (nvec < iarg) dvalue = 0.0;
     else dvalue = varvec[iarg-1];
@@ -1672,7 +1698,7 @@ void Thermo::compute_timeremain()
 
 void Thermo::compute_atoms()
 {
-  bivalue = atom->natoms;
+  bivalue = group->count_all();
 }
 
 /* ---------------------------------------------------------------------- */

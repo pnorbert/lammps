@@ -18,8 +18,13 @@
 
 namespace LAMMPS_NS {
 
+class DumpNetCDF;
+class DumpNetCDFMPIIO;
+
 class Thermo : protected Pointers {
   friend class MinCG;                  // accesses compute_pe
+  friend class DumpNetCDF;             // accesses thermo properties
+  friend class DumpNetCDFMPIIO;        // accesses thermo properties
 
  public:
   char *style;
@@ -27,6 +32,8 @@ class Thermo : protected Pointers {
   int modified;          // 1 if thermo_modify has been used, else 0
   int lostflag;          // IGNORE,WARN,ERROR
   int lostbond;          // ditto for atoms in bonds
+
+  enum {IGNORE,WARN,ERROR};
 
   Thermo(class LAMMPS *, int, char **);
   ~Thermo();
@@ -95,7 +102,7 @@ class Thermo : protected Pointers {
   char **id_fix;               // their IDs
   class Fix **fixes;           // list of ptrs to the Fix objects
 
-  int nvariable;               // # of variables evaulated by thermo
+  int nvariable;               // # of variables evaluated by thermo
   char **id_variable;          // list of variable names
   int *variables;              // list of Variable indices
 
@@ -112,6 +119,7 @@ class Thermo : protected Pointers {
   typedef void (Thermo::*FnPtr)();
   void addfield(const char *, FnPtr, int);
   FnPtr *vfunc;                // list of ptrs to functions
+  void call_vfunc(int ifield);
 
   void compute_compute();      // functions that compute a single value
   void compute_fix();          // via calls to  Compute,Fix,Variable classes
@@ -236,7 +244,7 @@ E: Lost atoms: original %ld current %ld
 Lost atoms are checked for each time thermo output is done.  See the
 thermo_modify lost command for options.  Lost atoms usually indicate
 bad dynamics, e.g. atoms have been blown far out of the simulation
-box, or moved futher than one processor's sub-domain away before
+box, or moved further than one processor's sub-domain away before
 reneighboring.
 
 W: Lost atoms: original %ld current %ld
@@ -244,7 +252,7 @@ W: Lost atoms: original %ld current %ld
 Lost atoms are checked for each time thermo output is done.  See the
 thermo_modify lost command for options.  Lost atoms usually indicate
 bad dynamics, e.g. atoms have been blown far out of the simulation
-box, or moved futher than one processor's sub-domain away before
+box, or moved further than one processor's sub-domain away before
 reneighboring.
 
 E: Thermo style does not use temp
@@ -351,9 +359,13 @@ E: Thermo custom variable is not equal-style variable
 Only equal-style variables can be output with thermodynamics, not
 atom-style variables.
 
-E: Thermo custom variable cannot be indexed
+E: Thermo custom variable is not vector-style variable
 
-Self-explanatory.
+UNDOCUMENTED
+
+E: Thermo custom variable cannot have two indices
+
+UNDOCUMENTED
 
 E: Unknown keyword in thermo_style custom command
 
@@ -395,5 +407,9 @@ E: Energy was not tallied on needed timestep
 You are using a thermo keyword that requires potentials to
 have tallied energy, but they didn't on this timestep.  See the
 variable doc page for ideas on how to make this work.
+
+U: Thermo custom variable cannot be indexed
+
+Self-explanatory.
 
 */

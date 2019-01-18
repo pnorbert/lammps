@@ -16,8 +16,8 @@
    [ based on angle_harmonic.cpp]
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "angle_quartic.h"
 #include "atom.h"
 #include "neighbor.h"
@@ -153,7 +153,7 @@ void AngleQuartic::compute(int eflag, int vflag)
     }
 
     if (evflag) ev_tally(i1,i2,i3,nlocal,newton_bond,eangle,f1,f3,
-			 delx1,dely1,delz1,delx2,dely2,delz2);
+                         delx1,dely1,delz1,delx2,dely2,delz2);
   }
 }
 
@@ -183,7 +183,7 @@ void AngleQuartic::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->nangletypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->nangletypes,ilo,ihi);
 
   double theta0_one = force->numeric(FLERR,arg[1]);
   double k2_one = force->numeric(FLERR,arg[2]);

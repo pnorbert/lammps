@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "create_box.h"
 #include "atom.h"
 #include "atom_vec.h"
@@ -158,7 +158,8 @@ void CreateBox::command(int narg, char **arg)
       iarg += 2;
     } else if (strcmp(arg[iarg],"extra/special/per/atom") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal create_box command");
-      atom->maxspecial = force->inumeric(FLERR,arg[iarg+1]);
+      force->special_extra = force->inumeric(FLERR,arg[iarg+1]);
+      atom->maxspecial += force->special_extra;
       iarg += 2;
     } else error->all(FLERR,"Illegal create_box command");
   }

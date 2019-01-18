@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
+#include <cstring>
 #include "compute_msd.h"
 #include "atom.h"
 #include "update.h"
@@ -26,7 +26,8 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeMSD::ComputeMSD(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg),
+  id_fix(NULL)
 {
   if (narg < 3) error->all(FLERR,"Illegal compute msd command");
 
@@ -197,17 +198,17 @@ void ComputeMSD::compute_vector()
         xbox = (image[i] & IMGMASK) - IMGMAX;
         ybox = (image[i] >> IMGBITS & IMGMASK) - IMGMAX;
         zbox = (image[i] >> IMG2BITS) - IMGMAX;
-	xtmp = x[i][0] + xbox*xprd - cm[0];
-	ytmp = x[i][1] + ybox*yprd - cm[1];
-	ztmp = x[i][2] + zbox*zprd - cm[2];
+        xtmp = x[i][0] + xbox*xprd - cm[0];
+        ytmp = x[i][1] + ybox*yprd - cm[1];
+        ztmp = x[i][2] + zbox*zprd - cm[2];
 
-	// use running average position for reference if requested
+        // use running average position for reference if requested
 
-	if (avflag) {
-	  xoriginal[i][0] = (xoriginal[i][0]*naverage + xtmp)*navfac;
-	  xoriginal[i][1] = (xoriginal[i][1]*naverage + ytmp)*navfac;
-	  xoriginal[i][2] = (xoriginal[i][2]*naverage + ztmp)*navfac;
-	}
+        if (avflag) {
+          xoriginal[i][0] = (xoriginal[i][0]*naverage + xtmp)*navfac;
+          xoriginal[i][1] = (xoriginal[i][1]*naverage + ytmp)*navfac;
+          xoriginal[i][2] = (xoriginal[i][2]*naverage + ztmp)*navfac;
+        }
 
         dx = xtmp - xoriginal[i][0];
         dy = ytmp - xoriginal[i][1];
@@ -228,13 +229,13 @@ void ComputeMSD::compute_vector()
         ytmp = x[i][1] + h[1]*ybox + h[3]*zbox - cm[1];
         ztmp = x[i][2] + h[2]*zbox - cm[2];
 
-	// use running average position for reference if requested
+        // use running average position for reference if requested
 
-	if (avflag) {
-	  xoriginal[i][0] = (xoriginal[i][0]*naverage + xtmp)*navfac;
-	  xoriginal[i][1] = (xoriginal[i][0]*naverage + xtmp)*navfac;
-	  xoriginal[i][2] = (xoriginal[i][0]*naverage + xtmp)*navfac;
-	}
+        if (avflag) {
+          xoriginal[i][0] = (xoriginal[i][0]*naverage + xtmp)*navfac;
+          xoriginal[i][1] = (xoriginal[i][0]*naverage + xtmp)*navfac;
+          xoriginal[i][2] = (xoriginal[i][0]*naverage + xtmp)*navfac;
+        }
 
         dx = xtmp - xoriginal[i][0];
         dy = ytmp - xoriginal[i][1];

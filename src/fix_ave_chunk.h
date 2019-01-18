@@ -20,7 +20,7 @@ FixStyle(ave/chunk,FixAveChunk)
 #ifndef LMP_FIX_AVE_CHUNK_H
 #define LMP_FIX_AVE_CHUNK_H
 
-#include <stdio.h>
+#include <cstdio>
 #include "fix.h"
 
 namespace LAMMPS_NS {
@@ -48,6 +48,11 @@ class FixAveChunk : public Fix {
   char **ids;
   class Compute *tbias;     // ptr to additional bias compute
   FILE *fp;
+
+  int densityflag;        // 1 if density/number or density/mass requested
+  int volflag;            // SCALAR/VECTOR for density normalization by volume
+  double chunk_volume_scalar;
+  double *chunk_volume_vec;
 
   int ave,nwindow;
   int normcount,iwindow,window_limit;
@@ -162,7 +167,7 @@ Self-explanatory.
 
 E: Fix ave/chunk does not use chunk/atom compute
 
-The specified conpute is not for a compute chunk/atom command.
+The specified compute is not for a compute chunk/atom command.
 
 E: Error writing file header
 

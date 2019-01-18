@@ -11,10 +11,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "fix_gravity.h"
 #include "atom.h"
 #include "update.h"
@@ -37,7 +37,8 @@ enum{CONSTANT,EQUAL};
 /* ---------------------------------------------------------------------- */
 
 FixGravity::FixGravity(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  mstr(NULL), vstr(NULL), pstr(NULL), tstr(NULL), xstr(NULL), ystr(NULL), zstr(NULL)
 {
   if (narg < 5) error->all(FLERR,"Illegal fix gravity command");
 
@@ -140,6 +141,8 @@ FixGravity::FixGravity(LAMMPS *lmp, int narg, char **arg) :
 
 FixGravity::~FixGravity()
 {
+  if (copymode) return;
+
   delete [] mstr;
   delete [] vstr;
   delete [] pstr;
@@ -246,7 +249,7 @@ void FixGravity::setup(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixGravity::post_force(int vflag)
+void FixGravity::post_force(int /*vflag*/)
 {
   // update gravity due to variables
 
@@ -299,7 +302,7 @@ void FixGravity::post_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixGravity::post_force_respa(int vflag, int ilevel, int iloop)
+void FixGravity::post_force_respa(int vflag, int ilevel, int /*iloop*/)
 {
   if (ilevel == ilevel_respa) post_force(vflag);
 }

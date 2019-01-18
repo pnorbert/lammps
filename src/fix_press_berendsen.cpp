@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
-#include <stdlib.h>
-#include <math.h>
+#include <cstring>
+#include <cstdlib>
+#include <cmath>
 #include "fix_press_berendsen.h"
 #include "atom.h"
 #include "force.h"
@@ -37,7 +37,8 @@ enum{ISO,ANISO};
 /* ---------------------------------------------------------------------- */
 
 FixPressBerendsen::FixPressBerendsen(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  id_temp(NULL), id_press(NULL), tflag(0), pflag(0)
 {
   if (narg < 5) error->all(FLERR,"Illegal fix press/berendsen command");
 
@@ -333,7 +334,7 @@ void FixPressBerendsen::init()
    compute T,P before integrator starts
 ------------------------------------------------------------------------- */
 
-void FixPressBerendsen::setup(int vflag)
+void FixPressBerendsen::setup(int /*vflag*/)
 {
   // trigger virial computation on next timestep
 

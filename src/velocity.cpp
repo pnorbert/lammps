@@ -12,10 +12,10 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "velocity.h"
 #include "atom.h"
 #include "update.h"
@@ -60,13 +60,19 @@ void Velocity::command(int narg, char **arg)
 
   // atom masses must all be set
 
-  atom->check_mass();
+  atom->check_mass(FLERR);
 
   // identify group
 
   igroup = group->find(arg[0]);
   if (igroup == -1) error->all(FLERR,"Could not find velocity group ID");
   groupbit = group->bitmask[igroup];
+
+  // check if velocities of atoms in rigid bodies are updated
+
+  if (modify->check_rigid_group_overlap(groupbit))
+    error->warning(FLERR,"Changing velocities of atoms in rigid bodies. "
+                     "This has no effect unless rigid bodies are rebuild");
 
   // identify style
 
@@ -151,6 +157,7 @@ void Velocity::init_external(const char *extgroup)
   rotation_flag = 0;
   loop_flag = ALL;
   scale_flag = 1;
+  bias_flag = 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -403,7 +410,7 @@ void Velocity::create(double t_desired, int seed)
 
 /* ---------------------------------------------------------------------- */
 
-void Velocity::set(int narg, char **arg)
+void Velocity::set(int /*narg*/, char **arg)
 {
   int xstyle,ystyle,zstyle,varflag;
   double vx,vy,vz;
@@ -572,7 +579,7 @@ void Velocity::set(int narg, char **arg)
    rescale velocities of a group after computing its temperature
 ------------------------------------------------------------------------- */
 
-void Velocity::scale(int narg, char **arg)
+void Velocity::scale(int /*narg*/, char **arg)
 {
   double t_desired = force->numeric(FLERR,arg[0]);
 
@@ -621,7 +628,7 @@ void Velocity::scale(int narg, char **arg)
    apply a ramped set of velocities
 ------------------------------------------------------------------------- */
 
-void Velocity::ramp(int narg, char **arg)
+void Velocity::ramp(int /*narg*/, char **arg)
 {
   // set scale factors
 
@@ -634,7 +641,7 @@ void Velocity::ramp(int narg, char **arg)
 
   // parse args
 
-  int v_dim;
+  int v_dim = 0;
   if (strcmp(arg[0],"vx") == 0) v_dim = 0;
   else if (strcmp(arg[0],"vy") == 0) v_dim = 1;
   else if (strcmp(arg[0],"vz") == 0) v_dim = 2;
@@ -655,7 +662,7 @@ void Velocity::ramp(int narg, char **arg)
     v_hi = zscale*force->numeric(FLERR,arg[2]);
   }
 
-  int coord_dim;
+  int coord_dim = 0;
   if (strcmp(arg[3],"x") == 0) coord_dim = 0;
   else if (strcmp(arg[3],"y") == 0) coord_dim = 1;
   else if (strcmp(arg[3],"z") == 0) coord_dim = 2;
@@ -698,7 +705,7 @@ void Velocity::ramp(int narg, char **arg)
    zero linear or angular momentum of a group
 ------------------------------------------------------------------------- */
 
-void Velocity::zero(int narg, char **arg)
+void Velocity::zero(int /*narg*/, char **arg)
 {
   if (strcmp(arg[0],"linear") == 0) {
     if (rfix < 0) zero_momentum();

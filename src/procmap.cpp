@@ -17,6 +17,7 @@
 
 #include "procmap.h"
 #include "universe.h"
+#include "comm.h"
 #include "domain.h"
 #include "math_extra.h"
 #include "memory.h"
@@ -28,8 +29,6 @@
 using namespace LAMMPS_NS;
 
 #define MAXLINE 128
-
-enum{MULTIPLE};                   // same as in Comm
 
 /* ---------------------------------------------------------------------- */
 
@@ -216,7 +215,7 @@ void ProcMap::numa_grid(int nprocs, int *user_procgrid, int *procgrid,
 
   best_factors(numapossible,numafactors,numagrid,1,1,1);
 
-  // user_nodegrid = implied user contraints on nodes
+  // user_nodegrid = implied user constraints on nodes
 
   int user_nodegrid[3];
   user_nodegrid[0] = user_procgrid[0] / numagrid[0];
@@ -811,7 +810,7 @@ int ProcMap::cull_other(int n, int **factors, int m,
 {
   int i = 0;
   while (i < n) {
-    if (other_style == MULTIPLE) {
+    if (other_style == Comm::MULTIPLE) {
       int flag = 0;
       if ((other_procgrid[0]/other_coregrid[0]) % factors[i][0]) flag = 1;
       if ((other_procgrid[1]/other_coregrid[1]) % factors[i][1]) flag = 1;

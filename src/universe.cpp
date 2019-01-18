@@ -12,10 +12,10 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <ctype.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
+#include <cctype>
+#include <cstdlib>
+#include <cstring>
+#include <cstdio>
 #include "universe.h"
 #include "version.h"
 #include "error.h"
@@ -163,17 +163,51 @@ void Universe::add_world(char *str)
   int n,nper;
   char *ptr;
 
-  if (str == NULL) {
-    n = 1;
-    nper = nprocs;
-  } else if ((ptr = strchr(str,'x')) != NULL) {
-    *ptr = '\0';
-    n = atoi(str);
-    nper = atoi(ptr+1);
-  } else {
-    n = 1;
-    nper = atoi(str);
-  }
+  n = 1;
+  nper = 0;
+
+  if (str != NULL) {
+
+    // check for valid partition argument
+
+    bool valid = true;
+
+    // str may not be empty and may only consist of digits or 'x'
+
+    size_t len = strlen(str);
+    if (len < 1) valid = false;
+    for (size_t i=0; i < len; ++i)
+      if (isdigit(str[i]) || str[i] == 'x') continue;
+      else valid = false;
+
+    if (valid) {
+      if ((ptr = strchr(str,'x')) != NULL) {
+
+        // 'x' may not be the first or last character
+
+        if (ptr == str) {
+          valid = false;
+        } else if (strlen(str) == len-1) {
+          valid = false;
+        } else {
+          *ptr = '\0';
+          n = atoi(str);
+          nper = atoi(ptr+1);
+          *ptr = 'x';
+        }
+      } else nper = atoi(str);
+    }
+
+    // require minimum of 1 partition with 1 processor
+
+    if (n < 1 || nper < 1) valid = false;
+
+    if (!valid) {
+      char msg[128];
+      snprintf(msg,128,"Invalid partition string '%s'",str);
+      error->universe_all(FLERR,msg);
+    }
+  } else nper = nprocs;
 
   memory->grow(procs_per_world,nworlds+n,"universe:procs_per_world");
   memory->grow(root_proc,(nworlds+n),"universe:root_proc");
@@ -235,7 +269,7 @@ char *date2num(const char *version)
     year = atoi(version);
   }
 
-  char *ver = new char[10];
+  char *ver = new char[64];
   sprintf(ver,"%04d%02d%02d", year % 10000, month, day % 100);
 
   return ver;

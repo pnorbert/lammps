@@ -15,8 +15,8 @@
    Contributing author: Tod A Pascal (Caltech)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "angle_cosine_periodic.h"
 #include "atom.h"
 #include "neighbor.h"
@@ -201,7 +201,7 @@ void AngleCosinePeriodic::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->nangletypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->nangletypes,ilo,ihi);
 
   double c_one = force->numeric(FLERR,arg[1]);
   int b_one = force->inumeric(FLERR,arg[2]);
@@ -222,7 +222,7 @@ void AngleCosinePeriodic::coeff(int narg, char **arg)
 
 /* ---------------------------------------------------------------------- */
 
-double AngleCosinePeriodic::equilibrium_angle(int i)
+double AngleCosinePeriodic::equilibrium_angle(int /*i*/)
 {
   return MY_PI;
 }

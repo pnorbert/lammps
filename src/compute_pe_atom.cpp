@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
+#include <cstring>
 #include "compute_pe_atom.h"
 #include "atom.h"
 #include "update.h"
@@ -33,7 +33,8 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputePEAtom::ComputePEAtom(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg),
+  energy(NULL)
 {
   if (narg < 3) error->all(FLERR,"Illegal compute pe/atom command");
 
@@ -68,7 +69,6 @@ ComputePEAtom::ComputePEAtom(LAMMPS *lmp, int narg, char **arg) :
   }
 
   nmax = 0;
-  energy = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -153,7 +153,7 @@ void ComputePEAtom::compute_peratom()
   // add in per-atom contributions from relevant fixes
   // always only for owned atoms, not ghost
 
-  if (fixflag && modify->n_thermo_energy_atom) 
+  if (fixflag && modify->n_thermo_energy_atom)
     modify->thermo_energy_atom(nlocal,energy);
 
   // communicate ghost energy between neighbor procs

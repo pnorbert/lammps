@@ -13,7 +13,8 @@
 
 /* ----------------------------------------------------------------------
     Contributing authors:
-             Rodrigo Freitas   (Unicamp/Brazil) - rodrigohb@gmail.com
+             Rodrigo Freitas (UC Berkeley) - rodrigof@berkeley.edu
+             Mark Asta (UC Berkeley) - mdasta@berkeley.edu
              Maurice de Koning (Unicamp/Brazil) - dekoning@ifi.unicamp.br
 ------------------------------------------------------------------------- */
 

@@ -19,15 +19,16 @@
 //         in.lammps = LAMMPS input script
 // See README for compilation instructions
 
-#include "stdio.h"
-#include "stdlib.h"
-#include "string.h"
-#include "mpi.h"
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <mpi.h>
 
-#include "lammps.h"         // these are LAMMPS include files
-#include "input.h"
-#include "atom.h"
-#include "library.h"
+// these are LAMMPS include files
+#include <lammps/lammps.h>
+#include <lammps/input.h>
+#include <lammps/atom.h>
+#include <lammps/library.h>
 
 using namespace LAMMPS_NS;
 
@@ -77,7 +78,7 @@ int main(int narg, char **arg)
   // (could just send it to proc 0 of comm_lammps and let it Bcast)
   // all LAMMPS procs call input->one() on the line
   
-  LAMMPS *lmp;
+  LAMMPS *lmp = NULL;
   if (lammps == 1) lmp = new LAMMPS(0,NULL,comm_lammps);
 
   int n;
@@ -91,7 +92,7 @@ int main(int narg, char **arg)
     MPI_Bcast(&n,1,MPI_INT,0,MPI_COMM_WORLD);
     if (n == 0) break;
     MPI_Bcast(line,n,MPI_CHAR,0,MPI_COMM_WORLD);
-    if (lammps == 1) lmp->input->one(line);
+    if (lammps == 1) lammps_command(lmp,line);
   }
 
   // run 10 more steps
@@ -100,23 +101,75 @@ int main(int narg, char **arg)
   // put coords back into LAMMPS
   // run a single step with changed coords
 
+  double *x = NULL;
+  double *v = NULL;
+
   if (lammps == 1) {
     lmp->input->one("run 10");
 
     int natoms = static_cast<int> (lmp->atom->natoms);
-    double *x = new double[3*natoms];
-    lammps_gather_atoms(lmp,"x",1,3,x);
+    x = new double[3*natoms];
+    v = new double[3*natoms];
+    lammps_gather_atoms(lmp,(char *) "x",1,3,x);
+    lammps_gather_atoms(lmp,(char *) "v",1,3,v);
     double epsilon = 0.1;
     x[0] += epsilon;
-    lammps_scatter_atoms(lmp,"x",1,3,x);
-    delete [] x;
+    lammps_scatter_atoms(lmp,(char *) "x",1,3,x);
 
+    // these 2 lines are the same
+
+    // lammps_command(lmp,"run 1");
     lmp->input->one("run 1");
   }
 
-  if (lammps == 1) delete lmp;
+  // extract force on single atom two different ways
+
+  if (lammps == 1) {
+    double **f = (double **) lammps_extract_atom(lmp,(char *) "f");
+    printf("Force on 1 atom via extract_atom: %g\n",f[0][0]);
+
+    double *fx = (double *) 
+      lammps_extract_variable(lmp,(char *) "fx",(char *) "all");
+    printf("Force on 1 atom via extract_variable: %g\n",fx[0]);
+  }
+
+  // use commands_string() and commands_list() to invoke more commands
+
+  char *strtwo = (char *) "run 10\nrun 20";
+  if (lammps == 1) lammps_commands_string(lmp,strtwo);
+
+  char *cmds[2];
+  cmds[0] = (char *) "run 10";
+  cmds[1] = (char *) "run 20";
+  if (lammps == 1) lammps_commands_list(lmp,2,cmds);
+
+  // delete all atoms
+  // create_atoms() to create new ones with old coords, vels
+  // initial thermo should be same as step 20
+
+  int *type = NULL;
+
+  if (lammps == 1) {
+    int natoms = static_cast<int> (lmp->atom->natoms);
+    type = new int[natoms];
+    for (int i = 0; i < natoms; i++) type[i] = 1;
+
+    lmp->input->one("delete_atoms group all");
+    lammps_create_atoms(lmp,natoms,NULL,type,x,v,NULL,0);
+    lmp->input->one("run 10");
+  }
+
+  delete [] x;
+  delete [] v;
+  delete [] type;
+
+  // close down LAMMPS
+
+  delete lmp;
 
   // close down MPI
 
+  if (lammps == 1) MPI_Comm_free(&comm_lammps);
+  MPI_Barrier(MPI_COMM_WORLD);
   MPI_Finalize();
 }

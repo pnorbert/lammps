@@ -38,10 +38,10 @@
    <http://www.gnu.org/licenses/>.
    ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_smtbq.h"
 #include "atom.h"
 #include "comm.h"
@@ -242,7 +242,7 @@ void PairSMTBQ::allocate()
    global settings
    ------------------------------------------------------------------------- */
 
-void PairSMTBQ::settings(int narg, char **arg)
+void PairSMTBQ::settings(int narg, char **/*arg*/)
 {
   if (narg > 0) error->all(FLERR,"Illegal pair_style command");
 }
@@ -399,7 +399,7 @@ void PairSMTBQ::read_file(char *file)
   fp = force->open_potential(file);
   if ( fp  == NULL ) {
     char str[128];
-    sprintf(str,"Cannot open SMTBQ potential file %s",file);
+    snprintf(str,128,"Cannot open SMTBQ potential file %s",file);
     error->one(FLERR,str);
   }
 
@@ -548,7 +548,7 @@ void PairSMTBQ::read_file(char *file)
     //  ---------------------------------
     m += 1;
 
-    // Ligne 5 - parametre des potentiels
+    // Ligne 5 - parametre des potentials
     fgets(ptr,MAXLINE,fp);  if (verbose) printf ("%s",ptr);
 
     // Lecture des protagonistes
@@ -615,7 +615,7 @@ void PairSMTBQ::read_file(char *file)
       if (verbose) printf (" %s %f %f %f %f\n",words[0],
                            intparams[m].a,intparams[m].p,intparams[m].ksi,intparams[m].q);
 
-      // Ligne 6 - rayon de coupure potentiel SM
+      // Ligne 6 - rayon de coupure potential SM
 
       fgets( ptr, MAXLINE, fp);
       Tokenize( ptr, &words );
@@ -1423,7 +1423,7 @@ void PairSMTBQ::tabqeq()
         {
           gam = dgam = dza = dzb = d2zaa = d2zab =
             d2zbb = d2zra = d2zrb = d2gamr2 = 0.0 ;
-          aCoeff = bCoeff = dij = 0.0 ;
+          dij = 0.0 ;
 
           s = static_cast<double>(k)*ds ; r = sqrt(s) ;
           if (k==0) r=10e-30;
@@ -1438,7 +1438,6 @@ void PairSMTBQ::tabqeq()
 
           // Cutting Fonction
 
-
           if (dij < 0.01 && ii==0)
             {
               ii=2;
@@ -1451,7 +1450,6 @@ void PairSMTBQ::tabqeq()
           if (r > rc) {dij = aCoeff *square(r- rc-nang) *exp(bCoeff*r);
             ddij = aCoeff*(r- rc-nang) *(2+bCoeff*(r-rc-nang))*exp(bCoeff*r);
           }
-
 
           if (r > (rc+nang)) {dij = 0.0 ; ddij = 0.0;}
 
@@ -1470,7 +1468,6 @@ void PairSMTBQ::tabqeq()
         if(strcmp(params[j].nom,"O")==0) {
           rb = ROxSurf;
           zb = (2.0*params[j].ne + 1.0)/(4.0*rb); }
-
 
         ii = 0 ; nang =cang= 5.0 ;
         // --------------------------
@@ -1595,7 +1592,7 @@ void PairSMTBQ::tabqeq()
 /* ---------------------------------------------------------------------*/
 
 void PairSMTBQ::potqeq(int i, int j, double qi, double qj, double rsq,
-                       double &fforce, int eflag, double &eng)
+                       double &fforce, int /*eflag*/, double &eng)
 {
 
   /* ===================================================================
@@ -1727,7 +1724,7 @@ void PairSMTBQ::pot_ES (int i, int j, double rsq, double &eng)
 {
 
   /* ===================================================================
-     Coulombian potentiel energy calcul between i and j atoms
+     Coulombian potential energy calcul between i and j atoms
      with fafb table make in sm_table().
      fafb[i][j] : i is the table's step (r)
      j is the interaction's # (in intype[itype][jtype])
@@ -1843,7 +1840,7 @@ void PairSMTBQ::pot_ES2 (int i, int j, double rsq, double &pot)
    -------------------------------------------------------------------- */
 
 void PairSMTBQ::rep_OO(Intparam *intparam, double rsq, double &fforce,
-                       int eflag, double &eng)
+                       int /*eflag*/, double &eng)
 {
   double r,tmp_exp,tmp;
   double A = intparam->abuck ;
@@ -1861,7 +1858,7 @@ void PairSMTBQ::rep_OO(Intparam *intparam, double rsq, double &fforce,
 
 
 void PairSMTBQ::Attr_OO(Intparam *intparam, double rsq, double &fforce,
-                        int eflag, double &eng)
+                        int /*eflag*/, double &eng)
 {
   double r,tmp_exp;
   double aOO = intparam->aOO ;
@@ -1983,8 +1980,8 @@ void PairSMTBQ::tabsm()
 
 /* -------------------------------------------------------------- */
 
-void PairSMTBQ::repulsive(Intparam *intparam, double rsq, int i, int j,
-                          double &fforce, int eflag, double &eng)
+void PairSMTBQ::repulsive(Intparam *intparam, double rsq, int /*i*/, int /*j*/,
+                          double &fforce, int /*eflag*/, double &eng)
 {
 
   /* ================================================
@@ -2034,7 +2031,7 @@ void PairSMTBQ::repulsive(Intparam *intparam, double rsq, int i, int j,
 
 
 void PairSMTBQ::attractive(Intparam *intparam, double rsq,
-                           int eflag, int i, double iq, int j, double jq)
+                           int /*eflag*/, int i, double /*iq*/, int /*j*/, double /*jq*/)
 {
   int itype,l;
   double r,t1,t2,xi,sds;
@@ -2658,7 +2655,7 @@ void PairSMTBQ::Charge()
     forward(q) ; // reverse(q);
 
 
-    //   Calcul des potentiel
+    //   Calcul des potential
     //  ----------------------
     QForce_charge(iloop);
 
@@ -2739,7 +2736,7 @@ void PairSMTBQ::Charge()
 
   //:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
   // ==========================================
-  //   Ecriture des potentiels dans un fichier
+  //   Ecriture des potentials dans un fichier
   // ==========================================
 
   if (strcmp(writepot,"true") == 0 && fmod(static_cast<double>(step), Neverypot) == 0.0) {
@@ -3337,7 +3334,7 @@ void PairSMTBQ::groupQEqAllParallel_QEq()
 
 /* ---------------------------------------------------------------------- */
 
-void PairSMTBQ::Init_charge(int *nQEq, int *nQEqa, int *nQEqc)
+void PairSMTBQ::Init_charge(int * /*nQEq*/, int * /*nQEqa*/, int * /*nQEqc*/)
 {
   int ii,i,gp,itype;
   int *ilist,test[nteam],init[nteam];
@@ -3394,7 +3391,7 @@ void PairSMTBQ::Init_charge(int *nQEq, int *nQEqa, int *nQEqc)
  *                        COMMUNICATION
  * ---------------------------------------------------------------------- */
 
-int PairSMTBQ::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, int *pbc)
+int PairSMTBQ::pack_forward_comm(int n, int *list, double *buf, int /*pbc_flag*/, int * /*pbc*/)
 {
   int i,j,m;
 
@@ -3564,7 +3561,7 @@ int PairSMTBQ::Tokenize( char* s, char*** tok )
 
 void PairSMTBQ::CheckEnergyVSForce()
 {
-  double drL,iq,jq,rsq,evdwlCoul,fpairCoul,eflag,ErepR,frepR,fpair,evdwl;
+  double drL,iq,jq,rsq,evdwlCoul,fpairCoul,eflag=0,ErepR,frepR,fpair,evdwl;
   int i,j,iiiMax,iii,iCoord;
   int itype,jtype,l,m;
   double r,t1,t2,sds,xi,engSurf,fforceSurf;

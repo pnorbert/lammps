@@ -84,9 +84,6 @@ class Compute : protected Pointers {
   int comm_reverse;         // size of reverse communication (0 if none)
   int dynamic_group_allow;  // 1 if can be used with dynamic group, else 0
 
-  unsigned int datamask;
-  unsigned int datamask_ext;
-
   // KOKKOS host/device flag and data masks
 
   ExecutionSpace execution_space;
@@ -117,9 +114,11 @@ class Compute : protected Pointers {
   virtual void dof_remove_pre() {}
   virtual int dof_remove(int) {return 0;}
   virtual void remove_bias(int, double *) {}
+  virtual void remove_bias_thr(int, double *, double *) {}
   virtual void remove_bias_all() {}
   virtual void reapply_bias_all() {}
   virtual void restore_bias(int, double *) {}
+  virtual void restore_bias_thr(int, double *, double *) {}
   virtual void restore_bias_all() {}
 
   virtual void reset_extra_compute_fix(const char *);
@@ -130,18 +129,18 @@ class Compute : protected Pointers {
   virtual void lock(class Fix *, bigint, bigint) {}
   virtual void unlock(class Fix *) {}
 
+  virtual void refresh() {}
+
   void addstep(bigint);
   int matchstep(bigint);
   void clearstep();
 
   virtual double memory_usage() {return 0.0;}
 
+  virtual void pair_setup_callback(int, int) {}
   virtual void pair_tally_callback(int, int, int, int,
                                    double, double, double,
                                    double, double, double) {}
-
-  virtual int unsigned data_mask() {return datamask;}
-  virtual int unsigned data_mask_ext() {return datamask_ext;}
 
  protected:
   int instance_me;             // which Compute class instantiation I am
@@ -156,7 +155,7 @@ class Compute : protected Pointers {
   double **vbiasall;           // stored velocity bias for all atoms
   int maxbias;                 // size of vbiasall array
 
-  inline int sbmask(int j) {
+  inline int sbmask(int j) const {
     return j >> SBBITS & 3;
   }
 

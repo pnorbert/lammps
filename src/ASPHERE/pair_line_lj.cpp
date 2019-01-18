@@ -11,10 +11,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_line_lj.h"
 #include "atom.h"
 #include "atom_vec_line.h"
@@ -355,7 +355,7 @@ void PairLineLJ::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
+      for (j = i; j <= atom->ntypes; j++)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 }
@@ -371,8 +371,8 @@ void PairLineLJ::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double size_itype = force->numeric(FLERR,arg[2]);
   double size_jtype = force->numeric(FLERR,arg[3]);
@@ -450,7 +450,7 @@ void PairLineLJ::discretize(int i, double size)
   double length = bonus[atom->line[i]].length;
   double theta = bonus[atom->line[i]].theta;
   int n = static_cast<int> (length/size) + 1;
-  
+
   dnum[i] = n;
   dfirst[i] = ndiscrete;
 

@@ -16,8 +16,10 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
 #include "math_const.h"
 #include "compute_saed.h"
 #include "compute_saed_consts.h"
@@ -29,8 +31,6 @@
 #include "citeme.h"
 #include "memory.h"
 #include "error.h"
-#include <stdio.h>
-#include <string.h>
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
@@ -49,7 +49,7 @@ static const char cite_compute_saed_c[] =
 /* ---------------------------------------------------------------------- */
 
 ComputeSAED::ComputeSAED(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg), ztype(NULL), store_tmp(NULL)
 {
   if (lmp->citeme) lmp->citeme->add(cite_compute_saed_c);
 
@@ -281,7 +281,7 @@ ComputeSAED::~ComputeSAED()
 {
   memory->destroy(vector);
   memory->destroy(store_tmp);
-  delete ztype;
+  delete[] ztype;
 }
 
 /* ---------------------------------------------------------------------- */

@@ -36,6 +36,8 @@ class PairGauss : public Pair {
   void read_restart(FILE *);
   void write_restart_settings(FILE *);
   void read_restart_settings(FILE *);
+  void write_data(FILE *fp);
+  void write_data_all(FILE *fp);
   double single(int, int, int, int, double, double, double, double &);
   void *extract(const char *, int &);
 
@@ -65,7 +67,7 @@ E: Incorrect args for pair coefficients
 
 Self-explanatory.  Check the input script or data file.
 
-E: All pair coeffs are not set
+U: All pair coeffs are not set
 
 All pair coefficients must be set in the data file or by the
 pair_coeff command before running a simulation.

@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
+#include <cstring>
 #include "fix_nph_kokkos.h"
 #include "modify.h"
 #include "error.h"
@@ -25,6 +25,7 @@ template<class DeviceType>
 FixNPHKokkos<DeviceType>::FixNPHKokkos(LAMMPS *lmp, int narg, char **arg) :
   FixNHKokkos<DeviceType>(lmp, narg, arg)
 {
+  this->kokkosable = 1;
   if (this->tstat_flag)
     this->error->all(FLERR,"Temperature control can not be used with fix nph");
   if (!this->pstat_flag)

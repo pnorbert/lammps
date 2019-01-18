@@ -361,11 +361,11 @@ warning.
 
 E: Bad quadratic solve for particle/line collision
 
-This is an internal error.  It should nornally not occur.
+This is an internal error.  It should normally not occur.
 
 E: Bad quadratic solve for particle/tri collision
 
-This is an internal error.  It should nornally not occur.
+This is an internal error.  It should normally not occur.
 
 W: Fix srd particle moved outside valid domain
 
@@ -373,11 +373,11 @@ This may indicate a problem with your simulation parameters.
 
 E: Big particle in fix srd cannot be point particle
 
-Big particles must be extended spheriods or ellipsoids.
+Big particles must be extended spheroids or ellipsoids.
 
 E: Cannot use lines with fix srd unless overlap is set
 
-This is because line segements are connected to each other.
+This is because line segments are connected to each other.
 
 E: Cannot use tris with fix srd unless overlap is set
 

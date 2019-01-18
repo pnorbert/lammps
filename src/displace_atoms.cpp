@@ -12,8 +12,8 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "displace_atoms.h"
 #include "atom.h"
 #include "modify.h"
@@ -75,6 +75,9 @@ void DisplaceAtoms::command(int narg, char **arg)
   if (igroup == -1) error->all(FLERR,"Could not find displace_atoms group ID");
   groupbit = group->bitmask[igroup];
 
+  if (modify->check_rigid_group_overlap(groupbit))
+    error->warning(FLERR,"Attempting to displace atoms in rigid bodies");
+
   int style = -1;
   if (strcmp(arg[1],"move") == 0) style = MOVE;
   else if (strcmp(arg[1],"ramp") == 0) style = RAMP;
@@ -115,7 +118,7 @@ void DisplaceAtoms::command(int narg, char **arg)
 
   if (style == RAMP) {
 
-    int d_dim;
+    int d_dim = 0;
     if (strcmp(arg[2],"x") == 0) d_dim = 0;
     else if (strcmp(arg[2],"y") == 0) d_dim = 1;
     else if (strcmp(arg[2],"z") == 0) d_dim = 2;
@@ -133,7 +136,7 @@ void DisplaceAtoms::command(int narg, char **arg)
       d_hi = zscale*force->numeric(FLERR,arg[4]);
     }
 
-    int coord_dim;
+    int coord_dim = 0;
     if (strcmp(arg[5],"x") == 0) coord_dim = 0;
     else if (strcmp(arg[5],"y") == 0) coord_dim = 1;
     else if (strcmp(arg[5],"z") == 0) coord_dim = 2;
@@ -257,8 +260,8 @@ void DisplaceAtoms::command(int narg, char **arg)
     if (ellipsoid_flag || tri_flag || body_flag) quat_flag = 1;
 
     // AtomVec pointers to retrieve per-atom storage of extra quantities
-    
-    AtomVecEllipsoid *avec_ellipsoid = 
+
+    AtomVecEllipsoid *avec_ellipsoid =
       (AtomVecEllipsoid *) atom->style_match("ellipsoid");
     AtomVecLine *avec_line = (AtomVecLine *) atom->style_match("line");
     AtomVecTri *avec_tri = (AtomVecTri *) atom->style_match("tri");
@@ -271,9 +274,15 @@ void DisplaceAtoms::command(int narg, char **arg)
     int *body = atom->body;
     int *mask = atom->mask;
     int nlocal = atom->nlocal;
+    imageint *image = atom->image;
 
     for (i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
+        // unwrap coordinate and reset image flags accordingly
+        domain->unmap(x[i],image[i]);
+        image[i] = ((imageint) IMGMAX << IMG2BITS) |
+          ((imageint) IMGMAX << IMGBITS) | IMGMAX;
+
         d[0] = x[i][0] - point[0];
         d[1] = x[i][1] - point[1];
         d[2] = x[i][2] - point[2];
@@ -295,14 +304,14 @@ void DisplaceAtoms::command(int narg, char **arg)
         if (dim == 3) x[i][2] = point[2] + c[2] + disp[2];
 
         // theta for lines
-          
+
         if (theta_flag && line[i] >= 0.0) {
           theta_new = fmod(avec_line->bonus[line[i]].theta+angle,MY_2PI);
           avec_line->bonus[atom->line[i]].theta = theta_new;
         }
-          
+
         // quats for ellipsoids, tris, and bodies
-        
+
         if (quat_flag) {
           quat = NULL;
           if (ellipsoid_flag && ellipsoid[i] >= 0)

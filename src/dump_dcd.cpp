@@ -16,11 +16,11 @@
                         Axel Kohlmeyer (Temple U), support for groups
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <inttypes.h>
-#include <stdio.h>
-#include <time.h>
-#include <string.h>
+#include <cmath>
+#include <inttypes.h> // <cinttypes> requires C++-11
+#include <cstdio>
+#include <ctime>
+#include <cstring>
 #include "dump_dcd.h"
 #include "domain.h"
 #include "atom.h"
@@ -52,7 +52,8 @@ static inline void fwrite_int32(FILE* fd, uint32_t i)
 
 /* ---------------------------------------------------------------------- */
 
-DumpDCD::DumpDCD(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
+DumpDCD::DumpDCD(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg),
+  coords(NULL)
 {
   if (narg != 5) error->all(FLERR,"Illegal dump dcd command");
   if (binary || compressed || multifile || multiproc)

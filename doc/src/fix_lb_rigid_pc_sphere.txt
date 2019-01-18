@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -18,7 +18,7 @@ bodystyle = {single} or {molecule} or {group} :l
   {single} args = none
   {molecule} args = none
   {group} args = N groupID1 groupID2 ...
-    N = # of groups
+    N = # of groups :pre
 zero or more keyword/value pairs may be appended :l
 keyword = {force} or {torque} or {innerNodes} :l
   {force} values = M xflag yflag zflag
@@ -26,14 +26,14 @@ keyword = {force} or {torque} or {innerNodes} :l
     xflag,yflag,zflag = off/on if component of center-of-mass force is active
   {torque} values = M xflag yflag zflag
     M = which rigid body from 1-Nbody (see asterisk form below)
-    xflag,yflag,zflag = off/on if component of center-of-mass torque is active 
-  {innerNodes} values = innergroup-ID 
+    xflag,yflag,zflag = off/on if component of center-of-mass torque is active
+  {innerNodes} values = innergroup-ID
     innergroup-ID = ID of the atom group which does not experience a hydrodynamic force from the lattice-Boltzmann fluid :pre
 :ule
 
 [Examples:]
 
-fix 1 spheres lb/rigid/pc/sphere 
+fix 1 spheres lb/rigid/pc/sphere
 fix 1 all lb/rigid/pc/sphere force 1 0 0 innerNodes ForceAtoms :pre
 
 [Description:]
@@ -68,7 +68,7 @@ is desirable simply to place an atom at the center of each sphere,
 which does not contribute to the hydrodynamic force, and have these
 central atoms interact with one another.
 
-:line  
+:line
 
 Apart from the features described above, this fix is very similar to
 the rigid fix (although it includes fewer optional arguments, and
@@ -80,12 +80,12 @@ assumes the constituent atoms are point particles); see
 No information about the {rigid} and {rigid/nve} fixes are written to
 "binary restart files"_restart.html.
 
-Similar to the "fix rigid"_fix_rigid.html command: The rigid
-fix computes a global scalar which can be accessed by various "output
-commands"_Section_howto.html#howto_15.  The scalar value calculated by
-these fixes is "intensive".  The scalar is the current temperature of
-the collection of rigid bodies.  This is averaged over all rigid
-bodies and their translational and rotational degrees of freedom.  The
+Similar to the "fix rigid"_fix_rigid.html command: The rigid fix
+computes a global scalar which can be accessed by various "output
+commands"_Howto_output.html.  The scalar value calculated by these
+fixes is "intensive".  The scalar is the current temperature of the
+collection of rigid bodies.  This is averaged over all rigid bodies
+and their translational and rotational degrees of freedom.  The
 translational energy of a rigid body is 1/2 m v^2, where m = total
 mass of the body and v = the velocity of its center of mass.  The
 rotational energy of a rigid body is 1/2 I w^2, where I = the moment
@@ -94,17 +94,17 @@ of freedom constrained by the {force} and {torque} keywords are
 removed from this calculation.
 
 All of these fixes compute a global array of values which can be
-accessed by various "output commands"_Section_howto.html#howto_15.
-The number of rows in the array is equal to the number of rigid
-bodies.  The number of columns is 15.  Thus for each rigid body, 15
-values are stored: the xyz coords of the center of mass (COM), the xyz
-components of the COM velocity, the xyz components of the force acting
-on the COM, the xyz components of the torque acting on the COM, and
-the xyz image flags of the COM, which have the same meaning as image
-flags for atom positions (see the "dump" command).  The force and
-torque values in the array are not affected by the {force} and
-{torque} keywords in the fix rigid command; they reflect values before
-any changes are made by those keywords.
+accessed by various "output commands"_Howto_output.html.  The number
+of rows in the array is equal to the number of rigid bodies.  The
+number of columns is 15.  Thus for each rigid body, 15 values are
+stored: the xyz coords of the center of mass (COM), the xyz components
+of the COM velocity, the xyz components of the force acting on the
+COM, the xyz components of the torque acting on the COM, and the xyz
+image flags of the COM, which have the same meaning as image flags for
+atom positions (see the "dump" command).  The force and torque values
+in the array are not affected by the {force} and {torque} keywords in
+the fix rigid command; they reflect values before any changes are made
+by those keywords.
 
 The ordering of the rigid bodies (by row in the array) is as follows.
 For the {single} keyword there is just one rigid body.  For the
@@ -119,11 +119,11 @@ No parameter of these fixes can be used with the {start/stop} keywords
 of the "run"_run.html command.  These fixes are not invoked during
 "energy minimization"_minimize.html.
 
-[Restrictions:] 
+[Restrictions:]
 
 This fix is part of the USER-LB package.  It is only enabled if LAMMPS
-was built with that package.  See the "Making
-LAMMPS"_Section_start.html#start_3 section for more info.
+was built with that package.  See the "Build
+package"_Build_package.html doc page for more info.
 
 Can only be used if a lattice-Boltzmann fluid has been created via the
 "fix lb/fluid"_fix_lb_fluid.html command, and must come after this
@@ -136,7 +136,7 @@ by default.
 
 "fix lb/fluid"_fix_lb_fluid.html, "fix lb/pc"_fix_lb_pc.html
 
-[Default:] 
+[Default:]
 
 The defaults are force * on on on, and torque * on on on.
 

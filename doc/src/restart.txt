@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -49,7 +49,7 @@ as it writes successive restart files.
 Note that you can specify the restart command twice, once with a
 single filename and once with two filenames.  This would allow you,
 for example, to write out archival restart files every 100000 steps
-using a single filenname, and more frequent temporary restart files
+using a single filename, and more frequent temporary restart files
 every 1000 steps, using two filenames.  Using restart 0 will turn off
 both modes of output.
 
@@ -82,7 +82,7 @@ versions 2.0 and above.  Using MPI-IO requires two steps.  First,
 build LAMMPS with its MPIIO package installed, e.g.
 
 make yes-mpiio    # installs the MPIIO package
-make g++          # build LAMMPS for your platform :pre
+make mpi          # build LAMMPS for your platform :pre
 
 Second, use a restart filename which contains ".mpiio".  Note that it
 does not have to end in ".mpiio", just contain those characters.
@@ -97,7 +97,7 @@ timestep of a run unless it is a multiple of N.  A restart file is
 written on the last timestep of a minimization if N > 0 and the
 minimization converges.
 
-Instead of a numeric value, N can be specifed as an "equal-style
+Instead of a numeric value, N can be specified as an "equal-style
 variable"_variable.html, which should be specified as v_name, where
 name is the variable name.  In this case, the variable is evaluated at
 the beginning of a run to determine the next timestep at which a
@@ -109,24 +109,23 @@ variables"_variable.html, as examples of useful functions to use in
 this context.  Other similar math functions could easily be added as
 options for "equal-style variables"_variable.html.
 
-For example, the following commands will write restart files 
+For example, the following commands will write restart files
 every step from 1100 to 1200, and could be useful for debugging
 a simulation where something goes wrong at step 1163:
 
-variable	s equal stride(1100,1200,1)
-restart		v_s tmp.restart :pre
+variable       s equal stride(1100,1200,1)
+restart        v_s tmp.restart :pre
 
 :line
 
 See the "read_restart"_read_restart.html command for information about
-what is stored in a restart file.  
+what is stored in a restart file.
 
 Restart files can be read by a "read_restart"_read_restart.html
 command to restart a simulation from a particular state.  Because the
 file is binary (to enable exact restarts), it may not be readable on
 another machine.  In this case, you can use the "-r command-line
-switch"_Section_start.html#start_7 to convert a restart file to a data
-file.
+switch"_Run_options.html to convert a restart file to a data file.
 
 NOTE: Although the purpose of restart files is to enable restarting a
 simulation from where it left off, not all information about a

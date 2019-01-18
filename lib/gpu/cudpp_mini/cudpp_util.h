@@ -1,8 +1,8 @@
 // -------------------------------------------------------------
 // cuDPP -- CUDA Data Parallel Primitives library
 // -------------------------------------------------------------
-// $Revision$
-// $Date$
+// $Revision: 5289 $
+// $Date: 2010-11-23 13:04:43 -0700 (Tue, 23 Nov 2010) $
 // ------------------------------------------------------------- 
 // This source code is distributed under the terms of license.txt in
 // the root directory of this source distribution.
@@ -25,7 +25,7 @@
 #include <cuda.h>
 #include <cudpp.h>
 #include <limits.h>
-#include <float.h>
+#include <cfloat>
 
 #if (CUDA_VERSION >= 3000)
 #define LAUNCH_BOUNDS(x) __launch_bounds__((x))

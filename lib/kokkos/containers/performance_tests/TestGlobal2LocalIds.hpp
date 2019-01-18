@@ -34,7 +34,7 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact  H. Carter Edwards (hcedwar@sandia.gov)
+// Questions? Contact Christian R. Trott (crtrott@sandia.gov)
 // 
 // ************************************************************************
 //@HEADER
@@ -76,7 +76,7 @@ struct generate_ids
   generate_ids( local_id_view & ids)
     : local_2_global(ids)
   {
-    Kokkos::parallel_for(local_2_global.dimension_0(), *this);
+    Kokkos::parallel_for(local_2_global.extent(0), *this);
   }
 
 
@@ -116,7 +116,7 @@ struct fill_map
   fill_map( global_id_view gIds, local_id_view lIds)
     : global_2_local(gIds) , local_2_global(lIds)
   {
-    Kokkos::parallel_for(local_2_global.dimension_0(), *this);
+    Kokkos::parallel_for(local_2_global.extent(0), *this);
   }
 
   KOKKOS_INLINE_FUNCTION
@@ -143,7 +143,7 @@ struct find_test
   find_test( global_id_view gIds, local_id_view lIds, value_type & num_errors)
     : global_2_local(gIds) , local_2_global(lIds)
   {
-    Kokkos::parallel_reduce(local_2_global.dimension_0(), *this, num_errors);
+    Kokkos::parallel_reduce(local_2_global.extent(0), *this, num_errors);
   }
 
   KOKKOS_INLINE_FUNCTION
@@ -178,7 +178,7 @@ void test_global_to_local_ids(unsigned num_ids)
   std::cout << num_ids << ", ";
 
   double elasped_time = 0;
-  Kokkos::Impl::Timer timer;
+  Kokkos::Timer timer;
 
   local_id_view local_2_global("local_ids", num_ids);
   global_id_view global_2_local((3u*num_ids)/2u);

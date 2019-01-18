@@ -56,7 +56,9 @@ class Pointers {
     infile(ptr->infile),
     screen(ptr->screen),
     logfile(ptr->logfile),
-    atomKK(ptr->atomKK) {}
+    atomKK(ptr->atomKK),
+    memoryKK(ptr->memoryKK),
+    python(ptr->python) {}
   virtual ~Pointers() {}
 
  protected:
@@ -83,6 +85,8 @@ class Pointers {
   FILE *&logfile;
 
   class AtomKokkos *&atomKK;
+  class MemoryKokkos *&memoryKK;
+  class Python *&python;
 };
 
 }

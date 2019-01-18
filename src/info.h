@@ -32,6 +32,36 @@ class Info : protected Pointers {
   bool is_active(const char *, const char *);
   bool is_defined(const char *, const char *);
   bool is_available(const char *, const char *);
+
+  static bool has_gzip_support();
+  static bool has_png_support();
+  static bool has_jpeg_support();
+  static bool has_ffmpeg_support();
+  static bool has_exceptions();
+  static bool has_package(const char * package_name);
+
+  static char *get_os_info();
+  static char *get_compiler_info();
+
+  char **get_variable_names(int &num);
+
+private:
+  void available_styles(FILE * out, int flags);
+
+  void atom_styles(FILE * out);
+  void integrate_styles(FILE * out);
+  void minimize_styles(FILE * out);
+  void pair_styles(FILE * out);
+  void bond_styles(FILE * out);
+  void angle_styles(FILE * out);
+  void dihedral_styles(FILE * out);
+  void improper_styles(FILE * out);
+  void kspace_styles(FILE * out);
+  void fix_styles(FILE * out);
+  void compute_styles(FILE * out);
+  void region_styles(FILE * out);
+  void dump_styles(FILE * out);
+  void command_styles(FILE * out);
 };
 
 }

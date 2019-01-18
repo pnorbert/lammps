@@ -15,9 +15,9 @@
    Contributing author: Chuanfu Luo (luochuanfu@gmail.com)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "bond_table.h"
 #include "atom.h"
 #include "neighbor.h"
@@ -168,7 +168,7 @@ void BondTable::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->nbondtypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->nbondtypes,ilo,ihi);
 
   int me;
   MPI_Comm_rank(world,&me);
@@ -244,7 +244,7 @@ void BondTable::read_restart(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double BondTable::single(int type, double rsq, int i, int j,
+double BondTable::single(int type, double rsq, int /*i*/, int /*j*/,
                          double &fforce)
 {
   double r = sqrt(rsq);
@@ -298,7 +298,7 @@ void BondTable::read_table(Table *tb, char *file, char *keyword)
   FILE *fp = force->open_potential(file);
   if (fp == NULL) {
     char str[128];
-    sprintf(str,"Cannot open file %s",file);
+    snprintf(str,128,"Cannot open file %s",file);
     error->one(FLERR,str);
   }
 
@@ -585,25 +585,34 @@ double BondTable::splint(double *xa, double *ya, double *y2a, int n, double x)
 
 /* ----------------------------------------------------------------------
    calculate potential u and force f at distance x
-   insure x is between bond min/max
+   insure x is between bond min/max, exit with error if not
 ------------------------------------------------------------------------- */
 
 void BondTable::uf_lookup(int type, double x, double &u, double &f)
 {
-  int itable;
-  double fraction,a,b;
+  if (!std::isfinite(x)) {
+    error->one(FLERR,"Illegal bond in bond style table");
+  }
 
-  Table *tb = &tables[tabindex[type]];
-  x = MAX(x,tb->lo);
-  x = MIN(x,tb->hi);
+  double fraction,a,b;
+  char estr[128];
+  const Table *tb = &tables[tabindex[type]];
+  const int itable = static_cast<int> ((x - tb->lo) * tb->invdelta);
+  if (itable < 0) {
+    sprintf(estr,"Bond length < table inner cutoff: "
+            "type %d length %g",type,x);
+    error->one(FLERR,estr);
+  } else if (itable >= tablength) {
+    sprintf(estr,"Bond length > table outer cutoff: "
+            "type %d length %g",type,x);
+    error->one(FLERR,estr);
+  }
 
   if (tabstyle == LINEAR) {
-    itable = static_cast<int> ((x - tb->lo) * tb->invdelta);
     fraction = (x - tb->r[itable]) * tb->invdelta;
     u = tb->e[itable] + fraction*tb->de[itable];
     f = tb->f[itable] + fraction*tb->df[itable];
   } else if (tabstyle == SPLINE) {
-    itable = static_cast<int> ((x - tb->lo) * tb->invdelta);
     fraction = (x - tb->r[itable]) * tb->invdelta;
 
     b = (x - tb->r[itable]) * tb->invdelta;
@@ -624,19 +633,28 @@ void BondTable::uf_lookup(int type, double x, double &u, double &f)
 
 void BondTable::u_lookup(int type, double x, double &u)
 {
-  int itable;
-  double fraction,a,b;
+  if (!std::isfinite(x)) {
+    error->one(FLERR,"Illegal bond in bond style table");
+  }
 
-  Table *tb = &tables[tabindex[type]];
-  x = MAX(x,tb->lo);
-  x = MIN(x,tb->hi);
+  double fraction,a,b;
+  char estr[128];
+  const Table *tb = &tables[tabindex[type]];
+  const int itable = static_cast<int> ((x - tb->lo) * tb->invdelta);
+  if (itable < 0) {
+    sprintf(estr,"Bond length < table inner cutoff: "
+            "type %d length %g",type,x);
+    error->one(FLERR,estr);
+  } else if (itable >= tablength) {
+    sprintf(estr,"Bond length > table outer cutoff: "
+            "type %d length %g",type,x);
+    error->one(FLERR,estr);
+  }
 
   if (tabstyle == LINEAR) {
-    itable = static_cast<int> ((x - tb->lo) * tb->invdelta);
     fraction = (x - tb->r[itable]) * tb->invdelta;
     u = tb->e[itable] + fraction*tb->de[itable];
   } else if (tabstyle == SPLINE) {
-    itable = static_cast<int> ((x - tb->lo) * tb->invdelta);
     fraction = (x - tb->r[itable]) * tb->invdelta;
 
     b = (x - tb->r[itable]) * tb->invdelta;

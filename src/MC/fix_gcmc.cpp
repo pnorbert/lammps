@@ -15,9 +15,9 @@
    Contributing author: Paul Crozier, Aidan Thompson (SNL)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "fix_gcmc.h"
 #include "atom.h"
 #include "atom_vec.h"
@@ -53,12 +53,28 @@ using namespace LAMMPS_NS;
 using namespace FixConst;
 using namespace MathConst;
 
-enum{ATOM,MOLECULE};
+// large energy value used to signal overlap
+
+#define MAXENERGYSIGNAL 1.0e100
+
+// this must be lower than MAXENERGYSIGNAL
+// by a large amount, so that it is still
+// less than total energy when negative
+// energy contributions are added to MAXENERGYSIGNAL
+
+#define MAXENERGYTEST 1.0e50
+
+enum{EXCHATOM,EXCHMOL}; // exchmode
+enum{MOVEATOM,MOVEMOL}; // movemode
 
 /* ---------------------------------------------------------------------- */
 
 FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  idregion(NULL), full_flag(0), ngroups(0), groupstrings(NULL), ngrouptypes(0), grouptypestrings(NULL),
+  grouptypebits(NULL), grouptypes(NULL), local_gas_list(NULL), molcoords(NULL), molq(NULL), molimage(NULL),
+  random_equal(NULL), random_unequal(NULL),
+  fixrigid(NULL), fixshake(NULL), idrigid(NULL), idshake(NULL)
 {
   if (narg < 11) error->all(FLERR,"Illegal fix gcmc command");
 
@@ -147,9 +163,9 @@ FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
      static_cast<double> (attempts);
   }
 
-  // error check and further setup for mode = MOLECULE
+  // error check and further setup for exchmode = EXCHMOL
 
-  if (mode == MOLECULE) {
+  if (exchmode == EXCHMOL) {
     if (onemols[imol]->xflag == 0)
       error->all(FLERR,"Fix gcmc molecule must have coordinates");
     if (onemols[imol]->typeflag == 0)
@@ -168,16 +184,24 @@ FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
   if (charge_flag && atom->q == NULL)
     error->all(FLERR,"Fix gcmc atom has charge, but atom style does not");
 
-  if (shakeflag && mode == ATOM)
+  if (rigidflag && exchmode == EXCHATOM)
+    error->all(FLERR,"Cannot use fix gcmc rigid and not molecule");
+  if (shakeflag && exchmode == EXCHATOM)
     error->all(FLERR,"Cannot use fix gcmc shake and not molecule");
+  if (rigidflag && shakeflag)
+    error->all(FLERR,"Cannot use fix gcmc rigid and shake");
+  if (rigidflag && (nmcmoves > 0))
+    error->all(FLERR,"Cannot use fix gcmc rigid with MC moves");
+  if (shakeflag && (nmcmoves > 0))
+    error->all(FLERR,"Cannot use fix gcmc shake with MC moves");
 
-  // setup of coords and imageflags array
+  // setup of array of coordinates for molecule insertion
+  // also used by rotation moves for any molecule
 
-  if (mode == ATOM) natoms_per_molecule = 1;
+  if (exchmode == EXCHATOM) natoms_per_molecule = 1;
   else natoms_per_molecule = onemols[imol]->natoms;
-  memory->create(coords,natoms_per_molecule,3,"gcmc:coords");
-  memory->create(imageflags,natoms_per_molecule,"gcmc:imageflags");
-  memory->create(atom_coord,natoms_per_molecule,3,"gcmc:atom_coord");
+  nmaxmolatoms = natoms_per_molecule;
+  grow_molecule_arrays(nmaxmolatoms);
 
   // compute the number of MC cycles that occur nevery timesteps
 
@@ -213,7 +237,12 @@ void FixGCMC::options(int narg, char **arg)
 
   // defaults
 
-  mode = ATOM;
+  exchmode = EXCHATOM;
+  movemode = MOVEATOM;
+  patomtrans = 0.0;
+  pmoltrans = 0.0;
+  pmolrotate = 0.0;
+  pmctot = 0.0;
   max_rotation_angle = 10*MY_PI/180;
   regionflag = 0;
   iregion = -1;
@@ -227,11 +256,11 @@ void FixGCMC::options(int narg, char **arg)
   pressure_flag = false;
   pressure = 0.0;
   fugacity_coeff = 1.0;
+  rigidflag = 0;
   shakeflag = 0;
   charge = 0.0;
   charge_flag = false;
   full_flag = false;
-  idshake = NULL;
   ngroups = 0;
   int ngroupsmax = 0;
   groupstrings = NULL;
@@ -242,6 +271,8 @@ void FixGCMC::options(int narg, char **arg)
   grouptypebits = NULL;
   energy_intra = 0.0;
   tfac_insert = 1.0;
+  overlap_cutoffsq = 0.0;
+  overlap_flag = 0;
 
   int iarg = 0;
   while (iarg < narg) {
@@ -253,10 +284,21 @@ void FixGCMC::options(int narg, char **arg)
       if (atom->molecules[imol]->nset > 1 && comm->me == 0)
         error->warning(FLERR,"Molecule template for "
                        "fix gcmc has multiple molecules");
-      mode = MOLECULE;
+      exchmode = EXCHMOL;
       onemols = atom->molecules;
       nmol = onemols[imol]->nset;
       iarg += 2;
+  } else if (strcmp(arg[iarg],"mcmoves") == 0) {
+      if (iarg+4 > narg) error->all(FLERR,"Illegal fix gcmc command");
+      patomtrans = force->numeric(FLERR,arg[iarg+1]);
+      pmoltrans = force->numeric(FLERR,arg[iarg+2]);
+      pmolrotate = force->numeric(FLERR,arg[iarg+3]);
+      if (patomtrans < 0 || pmoltrans < 0 || pmolrotate < 0)
+        error->all(FLERR,"Illegal fix gcmc command");
+      pmctot = patomtrans + pmoltrans + pmolrotate;
+      if (pmctot <= 0)
+        error->all(FLERR,"Illegal fix gcmc command");
+      iarg += 4;
     } else if (strcmp(arg[iarg],"region") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
       iregion = domain->find_region(arg[iarg+1]);
@@ -286,6 +328,14 @@ void FixGCMC::options(int narg, char **arg)
       charge = force->numeric(FLERR,arg[iarg+1]);
       charge_flag = true;
       iarg += 2;
+    } else if (strcmp(arg[iarg],"rigid") == 0) {
+      if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
+      int n = strlen(arg[iarg+1]) + 1;
+      delete [] idrigid;
+      idrigid = new char[n];
+      strcpy(idrigid,arg[iarg+1]);
+      rigidflag = 1;
+      iarg += 2;
     } else if (strcmp(arg[iarg],"shake") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
       int n = strlen(arg[iarg+1]) + 1;
@@ -300,11 +350,11 @@ void FixGCMC::options(int narg, char **arg)
     } else if (strcmp(arg[iarg],"group") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
       if (ngroups >= ngroupsmax) {
-	ngroupsmax = ngroups+1;
-	groupstrings = (char **)
-	  memory->srealloc(groupstrings,
-			   ngroupsmax*sizeof(char *),
-			   "fix_gcmc:groupstrings");
+        ngroupsmax = ngroups+1;
+        groupstrings = (char **)
+          memory->srealloc(groupstrings,
+                           ngroupsmax*sizeof(char *),
+                           "fix_gcmc:groupstrings");
       }
       int n = strlen(arg[iarg+1]) + 1;
       groupstrings[ngroups] = new char[n];
@@ -314,13 +364,13 @@ void FixGCMC::options(int narg, char **arg)
     } else if (strcmp(arg[iarg],"grouptype") == 0) {
       if (iarg+3 > narg) error->all(FLERR,"Illegal fix gcmc command");
       if (ngrouptypes >= ngrouptypesmax) {
-	ngrouptypesmax = ngrouptypes+1;
-	grouptypes = (int*) memory->srealloc(grouptypes,ngrouptypesmax*sizeof(int),
-			 "fix_gcmc:grouptypes");
-	grouptypestrings = (char**)
-	  memory->srealloc(grouptypestrings,
-			   ngrouptypesmax*sizeof(char *),
-			   "fix_gcmc:grouptypestrings");
+        ngrouptypesmax = ngrouptypes+1;
+        grouptypes = (int*) memory->srealloc(grouptypes,ngrouptypesmax*sizeof(int),
+                         "fix_gcmc:grouptypes");
+        grouptypestrings = (char**)
+          memory->srealloc(grouptypestrings,
+                           ngrouptypesmax*sizeof(char *),
+                           "fix_gcmc:grouptypestrings");
       }
       grouptypes[ngrouptypes] = atoi(arg[iarg+1]);
       int n = strlen(arg[iarg+2]) + 1;
@@ -336,6 +386,12 @@ void FixGCMC::options(int narg, char **arg)
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
       tfac_insert = force->numeric(FLERR,arg[iarg+1]);
       iarg += 2;
+    } else if (strcmp(arg[iarg],"overlap_cutoff") == 0) {
+      if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
+      double rtmp = force->numeric(FLERR,arg[iarg+1]);
+      overlap_cutoffsq = rtmp*rtmp;
+      overlap_flag = 1;
+      iarg += 2;
     } else error->all(FLERR,"Illegal fix gcmc command");
   }
 }
@@ -349,10 +405,11 @@ FixGCMC::~FixGCMC()
   delete random_unequal;
 
   memory->destroy(local_gas_list);
-  memory->destroy(atom_coord);
-  memory->destroy(coords);
-  memory->destroy(imageflags);
+  memory->destroy(molcoords);
+  memory->destroy(molq);
+  memory->destroy(molimage);
 
+  delete [] idrigid;
   delete [] idshake;
 
   if (ngroups > 0) {
@@ -391,6 +448,30 @@ void FixGCMC::init()
 
   triclinic = domain->triclinic;
 
+  // set probabilities for MC moves
+
+  if (pmctot == 0.0)
+    if (exchmode == EXCHATOM) {
+      movemode = MOVEATOM;
+      patomtrans = 1.0;
+      pmoltrans = 0.0;
+      pmolrotate = 0.0;
+    } else {
+      movemode = MOVEMOL;
+      patomtrans = 0.0;
+      pmoltrans = 0.5;
+      pmolrotate = 0.5;
+   }
+  else {
+    if (pmoltrans == 0.0 && pmolrotate == 0.0)
+      movemode = MOVEATOM;
+    else
+      movemode = MOVEMOL;
+    patomtrans /= pmctot;
+    pmoltrans /= pmctot;
+    pmolrotate /= pmctot;
+  }
+
   // decide whether to switch to the full_energy option
 
   if (!full_flag) {
@@ -398,11 +479,12 @@ void FixGCMC::init()
         (force->pair == NULL) ||
         (force->pair->single_enable == 0) ||
         (force->pair_match("hybrid",0)) ||
-        (force->pair_match("eam",0))
-	) {
+        (force->pair_match("eam",0)) ||
+        (force->pair->tail_flag)
+        ) {
       full_flag = true;
       if (comm->me == 0)
-	error->warning(FLERR,"Fix gcmc using full_energy option");
+        error->warning(FLERR,"Fix gcmc using full_energy option");
     }
   }
 
@@ -414,14 +496,14 @@ void FixGCMC::init()
 
   int *type = atom->type;
 
-  if (mode == ATOM) {
+  if (exchmode == EXCHATOM) {
     if (ngcmc_type <= 0 || ngcmc_type > atom->ntypes)
       error->all(FLERR,"Invalid atom type in fix gcmc command");
   }
 
-  // if mode == ATOM, warn if any deletable atom has a mol ID
+  // if atoms are exchanged, warn if any deletable atom has a mol ID
 
-  if ((mode == ATOM) && atom->molecule_flag) {
+  if ((exchmode == EXCHATOM) && atom->molecule_flag) {
     tagint *molecule = atom->molecule;
     int flag = 0;
     for (int i = 0; i < atom->nlocal; i++)
@@ -434,9 +516,9 @@ void FixGCMC::init()
        "Fix gcmc cannot exchange individual atoms belonging to a molecule");
   }
 
-  // if mode == MOLECULE, check for unset mol IDs
+  // if molecules are exchanged or moved, check for unset mol IDs
 
-  if (mode == MOLECULE) {
+  if (exchmode == EXCHMOL || movemode == MOVEMOL) {
     tagint *molecule = atom->molecule;
     int *mask = atom->mask;
     int flag = 0;
@@ -450,11 +532,26 @@ void FixGCMC::init()
        "All mol IDs should be set for fix gcmc group atoms");
   }
 
-  if (((mode == MOLECULE) && (atom->molecule_flag == 0)) ||
-      ((mode == MOLECULE) && (!atom->tag_enable || !atom->map_style)))
-    error->all(FLERR,
-               "Fix gcmc molecule command requires that "
-               "atoms have molecule attributes");
+  if (exchmode == EXCHMOL || movemode == MOVEMOL)
+    if (atom->molecule_flag == 0 || !atom->tag_enable || !atom->map_style)
+      error->all(FLERR,
+       "Fix gcmc molecule command requires that "
+       "atoms have molecule attributes");
+
+  // if rigidflag defined, check for rigid/small fix
+  // its molecule template must be same as this one
+
+  fixrigid = NULL;
+  if (rigidflag) {
+    int ifix = modify->find_fix(idrigid);
+    if (ifix < 0) error->all(FLERR,"Fix gcmc rigid fix does not exist");
+    fixrigid = modify->fix[ifix];
+    int tmp;
+    if (&onemols[imol] != (Molecule **) fixrigid->extract("onemol",tmp))
+      error->all(FLERR,
+                 "Fix gcmc and fix rigid/small not using "
+                 "same molecule template ID");
+  }
 
   // if shakeflag defined, check for SHAKE fix
   // its molecule template must be same as this one
@@ -465,16 +562,9 @@ void FixGCMC::init()
     if (ifix < 0) error->all(FLERR,"Fix gcmc shake fix does not exist");
     fixshake = modify->fix[ifix];
     int tmp;
-    if (onemols != (Molecule **) fixshake->extract("onemol",tmp))
+    if (&onemols[imol] != (Molecule **) fixshake->extract("onemol",tmp))
       error->all(FLERR,"Fix gcmc and fix shake not using "
                  "same molecule template ID");
-  }
-
-  // check for fix rigid
-
-  for (int irigid = 0; irigid < modify->nfix; irigid++) {
-    if (strncmp(modify->fix[irigid]->style,"rigid",5) == 0)
-      error->all(FLERR,"Fix gcmc can not currently be used with any rigid fix");
   }
 
   if (domain->dimension == 2)
@@ -518,7 +608,7 @@ void FixGCMC::init()
 
   // create a new group for temporary use with selected molecules
 
-  if (mode == MOLECULE) {
+  if (exchmode == EXCHMOL || movemode == MOVEMOL) {
     char **group_arg = new char*[3];
     // create unique group name for atoms to be rotated
     int len = strlen(id) + 30;
@@ -538,10 +628,10 @@ void FixGCMC::init()
     delete [] group_arg;
   }
 
-  // get all of the needed molecule data if mode == MOLECULE,
-  // otherwise just get the gas mass
+  // get all of the needed molecule data if exchanging
+  // or moving molecules, otherwise just get the gas mass
 
-  if (mode == MOLECULE) {
+  if (exchmode == EXCHMOL || movemode == MOVEMOL) {
 
     onemols[imol]->compute_mass();
     onemols[imol]->compute_com();
@@ -551,6 +641,9 @@ void FixGCMC::init()
       onemols[imol]->x[i][1] -= onemols[imol]->com[1];
       onemols[imol]->x[i][2] -= onemols[imol]->com[2];
     }
+    onemols[imol]->com[0] = 0;
+    onemols[imol]->com[1] = 0;
+    onemols[imol]->com[2] = 0;
 
   } else gas_mass = atom->mass[ngcmc_type];
 
@@ -576,17 +669,28 @@ void FixGCMC::init()
   }
 
   // compute beta, lambda, sigma, and the zz factor
-
+  // For LJ units, lambda=1
   beta = 1.0/(force->boltz*reservoir_temperature);
-  double lambda = sqrt(force->hplanck*force->hplanck/
-                       (2.0*MY_PI*gas_mass*force->mvv2e*
+  if (strcmp(update->unit_style,"lj") == 0)
+    zz = exp(beta*chemical_potential);
+  else {
+    double lambda = sqrt(force->hplanck*force->hplanck/
+                         (2.0*MY_PI*gas_mass*force->mvv2e*
                         force->boltz*reservoir_temperature));
+    zz = exp(beta*chemical_potential)/(pow(lambda,3.0));
+  }
+
   sigma = sqrt(force->boltz*reservoir_temperature*tfac_insert/gas_mass/force->mvv2e);
-  zz = exp(beta*chemical_potential)/(pow(lambda,3.0));
   if (pressure_flag) zz = pressure*fugacity_coeff*beta/force->nktv2p;
 
   imagezero = ((imageint) IMGMAX << IMG2BITS) |
              ((imageint) IMGMAX << IMGBITS) | IMGMAX;
+
+  // warning if group id is "all"
+
+  if ((comm->me == 0) && (groupbit & 1))
+    error->warning(FLERR, "Fix gcmc is being applied "
+                   "to the default group all");
 
   // construct group bitmask for all new atoms
   // aggregated over all group keywords
@@ -607,10 +711,16 @@ void FixGCMC::init()
     for (int igroup = 0; igroup < ngrouptypes; igroup++) {
       int jgroup = group->find(grouptypestrings[igroup]);
       if (jgroup == -1)
-	error->all(FLERR,"Could not find specified fix gcmc group ID");
+        error->all(FLERR,"Could not find specified fix gcmc group ID");
       grouptypebits[igroup] = group->bitmask[jgroup];
     }
   }
+
+  // Current implementation is broken using
+  // full_flag on molecules on more than one processor.
+  // Print error if this is the current mode
+  if (full_flag && (exchmode == EXCHMOL || movemode == MOVEMOL) && comm->nprocs > 1)
+    error->all(FLERR,"fix gcmc does currently not support full_energy option with molecules on more than 1 MPI process.");
 
 }
 
@@ -653,28 +763,25 @@ void FixGCMC::pre_exchange()
 
   if (full_flag) {
     energy_stored = energy_full();
+    if (overlap_flag && energy_stored > MAXENERGYTEST)
+        error->warning(FLERR,"Energy of old configuration in "
+                       "fix gcmc is > MAXENERGYTEST.");
 
-    if (mode == MOLECULE) {
-      for (int i = 0; i < ncycles; i++) {
-        int random_int_fraction =
-          static_cast<int>(random_equal->uniform()*ncycles) + 1;
-        if (random_int_fraction <= nmcmoves) {
- 	  if (random_equal->uniform() < 0.5) attempt_molecule_translation_full();
- 	  else attempt_molecule_rotation_full();
+    for (int i = 0; i < ncycles; i++) {
+      int ixm = static_cast<int>(random_equal->uniform()*ncycles) + 1;
+      if (ixm <= nmcmoves) {
+        double xmcmove = random_equal->uniform();
+        if (xmcmove < patomtrans) attempt_atomic_translation_full();
+        else if (xmcmove < patomtrans+pmoltrans) attempt_molecule_translation_full();
+        else attempt_molecule_rotation_full();
+      } else {
+        double xgcmc = random_equal->uniform();
+        if (exchmode == EXCHATOM) {
+          if (xgcmc < 0.5) attempt_atomic_deletion_full();
+          else attempt_atomic_insertion_full();
         } else {
-	  if (random_equal->uniform() < 0.5) attempt_molecule_deletion_full();
-	  else attempt_molecule_insertion_full();
-        }
-      }
-    } else {
-      for (int i = 0; i < ncycles; i++) {
-        int random_int_fraction =
-          static_cast<int>(random_equal->uniform()*ncycles) + 1;
-        if (random_int_fraction <= nmcmoves) {
-          attempt_atomic_translation_full();
-        } else {
-	  if (random_equal->uniform() < 0.5) attempt_atomic_deletion_full();
-	  else attempt_atomic_insertion_full();
+          if (xgcmc < 0.5) attempt_molecule_deletion_full();
+          else attempt_molecule_insertion_full();
         }
       }
     }
@@ -687,27 +794,21 @@ void FixGCMC::pre_exchange()
 
   } else {
 
-    if (mode == MOLECULE) {
-      for (int i = 0; i < ncycles; i++) {
-        int random_int_fraction =
-          static_cast<int>(random_equal->uniform()*ncycles) + 1;
-        if (random_int_fraction <= nmcmoves) {
-          if (random_equal->uniform() < 0.5) attempt_molecule_translation();
-          else attempt_molecule_rotation();
+    for (int i = 0; i < ncycles; i++) {
+      int ixm = static_cast<int>(random_equal->uniform()*ncycles) + 1;
+      if (ixm <= nmcmoves) {
+        double xmcmove = random_equal->uniform();
+        if (xmcmove < patomtrans) attempt_atomic_translation();
+        else if (xmcmove < patomtrans+pmoltrans) attempt_molecule_translation();
+        else attempt_molecule_rotation();
+      } else {
+        double xgcmc = random_equal->uniform();
+        if (exchmode == EXCHATOM) {
+          if (xgcmc < 0.5) attempt_atomic_deletion();
+          else attempt_atomic_insertion();
         } else {
-          if (random_equal->uniform() < 0.5) attempt_molecule_deletion();
-	  else attempt_molecule_insertion();
-        }
-      }
-    } else {
-      for (int i = 0; i < ncycles; i++) {
-        int random_int_fraction =
-          static_cast<int>(random_equal->uniform()*ncycles) + 1;
-        if (random_int_fraction <= nmcmoves) {
-          attempt_atomic_translation();
-        } else {
-	  if (random_equal->uniform() < 0.5) attempt_atomic_deletion();
-	  else attempt_atomic_insertion();
+          if (xgcmc < 0.5) attempt_molecule_deletion();
+          else attempt_molecule_insertion();
         }
       }
     }
@@ -730,6 +831,9 @@ void FixGCMC::attempt_atomic_translation()
   if (i >= 0) {
     double **x = atom->x;
     double energy_before = energy(i,ngcmc_type,-1,x[i]);
+    if (overlap_flag && energy_before > MAXENERGYTEST)
+        error->warning(FLERR,"Energy of old configuration in "
+                       "fix gcmc is > MAXENERGYTEST.");
     double rsq = 1.1;
     double rx,ry,rz;
     rx = ry = rz = 0.0;
@@ -761,7 +865,9 @@ void FixGCMC::attempt_atomic_translation()
       error->one(FLERR,"Fix gcmc put atom outside box");
 
     double energy_after = energy(i,ngcmc_type,-1,coord);
-    if (random_unequal->uniform() <
+
+    if (energy_after < MAXENERGYTEST &&
+        random_unequal->uniform() <
         exp(beta*(energy_before - energy_after))) {
       x[i][0] = coord[0];
       x[i][1] = coord[1];
@@ -875,12 +981,12 @@ void FixGCMC::attempt_atomic_insertion()
     if (!domain->inside(coord))
       error->one(FLERR,"Fix gcmc put atom outside box");
     if (coord[0] >= sublo[0] && coord[0] < subhi[0] &&
-	coord[1] >= sublo[1] && coord[1] < subhi[1] &&
-	coord[2] >= sublo[2] && coord[2] < subhi[2]) proc_flag = 1;
+        coord[1] >= sublo[1] && coord[1] < subhi[1] &&
+        coord[2] >= sublo[2] && coord[2] < subhi[2]) proc_flag = 1;
   } else {
     if (lamda[0] >= sublo[0] && lamda[0] < subhi[0] &&
-	lamda[1] >= sublo[1] && lamda[1] < subhi[1] &&
-	lamda[2] >= sublo[2] && lamda[2] < subhi[2]) proc_flag = 1;
+        lamda[1] >= sublo[1] && lamda[1] < subhi[1] &&
+        lamda[2] >= sublo[2] && lamda[2] < subhi[2]) proc_flag = 1;
   }
 
   int success = 0;
@@ -892,7 +998,9 @@ void FixGCMC::attempt_atomic_insertion()
       atom->q[ii] = charge;
     }
     double insertion_energy = energy(ii,ngcmc_type,-1,coord);
-    if (random_unequal->uniform() <
+
+    if (insertion_energy < MAXENERGYTEST &&
+        random_unequal->uniform() <
         zz*volume*exp(-beta*insertion_energy)/(ngas+1)) {
       atom->avec->create_atom(ngcmc_type,coord);
       int m = atom->nlocal - 1;
@@ -902,8 +1010,8 @@ void FixGCMC::attempt_atomic_insertion()
 
       atom->mask[m] = groupbitall;
       for (int igroup = 0; igroup < ngrouptypes; igroup++) {
-	if (ngcmc_type == grouptypes[igroup])
-	  atom->mask[m] |= grouptypebits[igroup];
+        if (ngcmc_type == grouptypes[igroup])
+          atom->mask[m] |= grouptypebits[igroup];
       }
 
       atom->v[m][0] = random_unequal->gaussian()*sigma;
@@ -946,6 +1054,9 @@ void FixGCMC::attempt_molecule_translation()
   if (translation_molecule == -1) return;
 
   double energy_before_sum = molecule_energy(translation_molecule);
+  if (overlap_flag && energy_before_sum > MAXENERGYTEST)
+    error->warning(FLERR,"Energy of old configuration in "
+                   "fix gcmc is > MAXENERGYTEST.");
 
   double **x = atom->x;
   double rx,ry,rz;
@@ -961,10 +1072,9 @@ void FixGCMC::attempt_molecule_translation()
   com_displace[1] = displace*ry;
   com_displace[2] = displace*rz;
 
-  int nlocal = atom->nlocal;
   if (regionflag) {
     int *mask = atom->mask;
-    for (int i = 0; i < nlocal; i++) {
+    for (int i = 0; i < atom->nlocal; i++) {
       if (atom->molecule[i] == translation_molecule) {
         mask[i] |= molecule_group_bit;
       } else {
@@ -995,13 +1105,13 @@ void FixGCMC::attempt_molecule_translation()
   }
 
   double energy_after = 0.0;
-  for (int i = 0; i < nlocal; i++) {
+  for (int i = 0; i < atom->nlocal; i++) {
     if (atom->molecule[i] == translation_molecule) {
       coord[0] = x[i][0] + com_displace[0];
       coord[1] = x[i][1] + com_displace[1];
       coord[2] = x[i][2] + com_displace[2];
       if (!domain->inside_nonperiodic(coord))
-  	error->one(FLERR,"Fix gcmc put atom outside box");
+        error->one(FLERR,"Fix gcmc put atom outside box");
       energy_after += energy(i,atom->type[i],translation_molecule,coord);
     }
   }
@@ -1009,9 +1119,10 @@ void FixGCMC::attempt_molecule_translation()
   double energy_after_sum = 0.0;
   MPI_Allreduce(&energy_after,&energy_after_sum,1,MPI_DOUBLE,MPI_SUM,world);
 
-  if (random_equal->uniform() <
+  if (energy_after_sum < MAXENERGYTEST &&
+      random_equal->uniform() <
       exp(beta*(energy_before_sum - energy_after_sum))) {
-    for (int i = 0; i < nlocal; i++) {
+    for (int i = 0; i < atom->nlocal; i++) {
       if (atom->molecule[i] == translation_molecule) {
         x[i][0] += com_displace[0];
         x[i][1] += com_displace[1];
@@ -1042,16 +1153,23 @@ void FixGCMC::attempt_molecule_rotation()
   if (rotation_molecule == -1) return;
 
   double energy_before_sum = molecule_energy(rotation_molecule);
+  if (overlap_flag && energy_before_sum > MAXENERGYTEST)
+    error->warning(FLERR,"Energy of old configuration in "
+                   "fix gcmc is > MAXENERGYTEST.");
 
-  int nlocal = atom->nlocal;
   int *mask = atom->mask;
-  for (int i = 0; i < nlocal; i++) {
+  int nmolcoords = 0;
+  for (int i = 0; i < atom->nlocal; i++) {
     if (atom->molecule[i] == rotation_molecule) {
       mask[i] |= molecule_group_bit;
+      nmolcoords++;
     } else {
       mask[i] &= molecule_group_inversebit;
     }
   }
+
+  if (nmolcoords > nmaxmolatoms)
+    grow_molecule_arrays(nmolcoords);
 
   double com[3];
   com[0] = com[1] = com[2] = 0.0;
@@ -1078,23 +1196,23 @@ void FixGCMC::attempt_molecule_rotation()
   imageint *image = atom->image;
   double energy_after = 0.0;
   int n = 0;
-  for (int i = 0; i < nlocal; i++) {
+  for (int i = 0; i < atom->nlocal; i++) {
     if (mask[i] & molecule_group_bit) {
       double xtmp[3];
       domain->unmap(x[i],image[i],xtmp);
       xtmp[0] -= com[0];
       xtmp[1] -= com[1];
       xtmp[2] -= com[2];
-      MathExtra::matvec(rotmat,xtmp,atom_coord[n]);
-      atom_coord[n][0] += com[0];
-      atom_coord[n][1] += com[1];
-      atom_coord[n][2] += com[2];
-      xtmp[0] = atom_coord[n][0];
-      xtmp[1] = atom_coord[n][1];
-      xtmp[2] = atom_coord[n][2];
+      MathExtra::matvec(rotmat,xtmp,molcoords[n]);
+      molcoords[n][0] += com[0];
+      molcoords[n][1] += com[1];
+      molcoords[n][2] += com[2];
+      xtmp[0] = molcoords[n][0];
+      xtmp[1] = molcoords[n][1];
+      xtmp[2] = molcoords[n][2];
       domain->remap(xtmp);
       if (!domain->inside(xtmp))
-	error->one(FLERR,"Fix gcmc put atom outside box");
+        error->one(FLERR,"Fix gcmc put atom outside box");
       energy_after += energy(i,atom->type[i],rotation_molecule,xtmp);
       n++;
     }
@@ -1103,15 +1221,16 @@ void FixGCMC::attempt_molecule_rotation()
   double energy_after_sum = 0.0;
   MPI_Allreduce(&energy_after,&energy_after_sum,1,MPI_DOUBLE,MPI_SUM,world);
 
-  if (random_equal->uniform() <
+  if (energy_after_sum < MAXENERGYTEST &&
+      random_equal->uniform() <
       exp(beta*(energy_before_sum - energy_after_sum))) {
     int n = 0;
-    for (int i = 0; i < nlocal; i++) {
+    for (int i = 0; i < atom->nlocal; i++) {
       if (mask[i] & molecule_group_bit) {
         image[i] = imagezero;
-        x[i][0] = atom_coord[n][0];
-        x[i][1] = atom_coord[n][1];
-        x[i][2] = atom_coord[n][2];
+        x[i][0] = molcoords[n][0];
+        x[i][1] = molcoords[n][1];
+        x[i][2] = molcoords[n][2];
         domain->remap(x[i],image[i]);
         n++;
       }
@@ -1135,6 +1254,10 @@ void FixGCMC::attempt_molecule_deletion()
   ndeletion_attempts += 1.0;
 
   if (ngas == 0) return;
+
+  // work-around to avoid n=0 problem with fix rigid/nvt/small
+
+  if (ngas == natoms_per_molecule) return;
 
   tagint deletion_molecule = pick_random_gas_molecule();
   if (deletion_molecule == -1) return;
@@ -1228,21 +1351,21 @@ void FixGCMC::attempt_molecule_insertion()
   MathExtra::quat_to_mat(quat,rotmat);
 
   double insertion_energy = 0.0;
-  bool procflag[natoms_per_molecule];
+  bool *procflag = new bool[natoms_per_molecule];
 
   for (int i = 0; i < natoms_per_molecule; i++) {
-    MathExtra::matvec(rotmat,onemols[imol]->x[i],atom_coord[i]);
-    atom_coord[i][0] += com_coord[0];
-    atom_coord[i][1] += com_coord[1];
-    atom_coord[i][2] += com_coord[2];
+    MathExtra::matvec(rotmat,onemols[imol]->x[i],molcoords[i]);
+    molcoords[i][0] += com_coord[0];
+    molcoords[i][1] += com_coord[1];
+    molcoords[i][2] += com_coord[2];
 
     // use temporary variable for remapped position
-    // so unmapped position is preserved in atom_coord
+    // so unmapped position is preserved in molcoords
 
     double xtmp[3];
-    xtmp[0] = atom_coord[i][0];
-    xtmp[1] = atom_coord[i][1];
-    xtmp[2] = atom_coord[i][2];
+    xtmp[0] = molcoords[i][0];
+    xtmp[1] = molcoords[i][1];
+    xtmp[2] = molcoords[i][2];
     domain->remap(xtmp);
     if (!domain->inside(xtmp))
       error->one(FLERR,"Fix gcmc put atom outside box");
@@ -1250,21 +1373,21 @@ void FixGCMC::attempt_molecule_insertion()
     procflag[i] = false;
     if (triclinic == 0) {
       if (xtmp[0] >= sublo[0] && xtmp[0] < subhi[0] &&
-	  xtmp[1] >= sublo[1] && xtmp[1] < subhi[1] &&
-	  xtmp[2] >= sublo[2] && xtmp[2] < subhi[2]) procflag[i] = true;
+          xtmp[1] >= sublo[1] && xtmp[1] < subhi[1] &&
+          xtmp[2] >= sublo[2] && xtmp[2] < subhi[2]) procflag[i] = true;
     } else {
       domain->x2lamda(xtmp,lamda);
       if (lamda[0] >= sublo[0] && lamda[0] < subhi[0] &&
-	  lamda[1] >= sublo[1] && lamda[1] < subhi[1] &&
-	  lamda[2] >= sublo[2] && lamda[2] < subhi[2]) procflag[i] = true;
+          lamda[1] >= sublo[1] && lamda[1] < subhi[1] &&
+          lamda[2] >= sublo[2] && lamda[2] < subhi[2]) procflag[i] = true;
     }
 
     if (procflag[i]) {
       int ii = -1;
       if (onemols[imol]->qflag == 1) {
-	ii = atom->nlocal + atom->nghost;
-	if (ii >= atom->nmax) atom->avec->grow(0);
-	atom->q[ii] = onemols[imol]->q[i];
+        ii = atom->nlocal + atom->nghost;
+        if (ii >= atom->nmax) atom->avec->grow(0);
+        atom->q[ii] = onemols[imol]->q[i];
       }
       insertion_energy += energy(ii,onemols[imol]->type[i],-1,xtmp);
     }
@@ -1274,7 +1397,8 @@ void FixGCMC::attempt_molecule_insertion()
   MPI_Allreduce(&insertion_energy,&insertion_energy_sum,1,
                 MPI_DOUBLE,MPI_SUM,world);
 
-  if (random_equal->uniform() < zz*volume*natoms_per_molecule*
+  if (insertion_energy_sum < MAXENERGYTEST &&
+      random_equal->uniform() < zz*volume*natoms_per_molecule*
       exp(-beta*insertion_energy_sum)/(ngas + natoms_per_molecule)) {
 
     tagint maxmol = 0;
@@ -1299,17 +1423,17 @@ void FixGCMC::attempt_molecule_insertion()
 
     for (int i = 0; i < natoms_per_molecule; i++) {
       if (procflag[i]) {
-        atom->avec->create_atom(onemols[imol]->type[i],atom_coord[i]);
+        atom->avec->create_atom(onemols[imol]->type[i],molcoords[i]);
         int m = atom->nlocal - 1;
 
-	// add to groups
-	// optionally add to type-based groups
+        // add to groups
+        // optionally add to type-based groups
 
-	atom->mask[m] = groupbitall;
-	for (int igroup = 0; igroup < ngrouptypes; igroup++) {
-	  if (ngcmc_type == grouptypes[igroup])
-	    atom->mask[m] |= grouptypebits[igroup];
-	}
+        atom->mask[m] = groupbitall;
+        for (int igroup = 0; igroup < ngrouptypes; igroup++) {
+          if (ngcmc_type == grouptypes[igroup])
+            atom->mask[m] |= grouptypebits[igroup];
+        }
 
         atom->image[m] = imagezero;
         domain->remap(atom->x[m],atom->image[m]);
@@ -1326,9 +1450,15 @@ void FixGCMC::attempt_molecule_insertion()
       }
     }
 
-    if (shakeflag)
-      fixshake->set_molecule(nlocalprev,maxtag_all,imol,com_coord,vnew,quat);
+    // FixRigidSmall::set_molecule stores rigid body attributes
+    // FixShake::set_molecule stores shake info for molecule
 
+    for (int submol = 0; submol < nmol; ++submol) {
+      if (rigidflag)
+        fixrigid->set_molecule(nlocalprev,maxtag_all,submol,com_coord,vnew,quat);
+      else if (shakeflag)
+        fixshake->set_molecule(nlocalprev,maxtag_all,submol,com_coord,vnew,quat);
+    }
     atom->natoms += natoms_per_molecule;
     if (atom->natoms < 0)
       error->all(FLERR,"Too many total atoms");
@@ -1344,6 +1474,7 @@ void FixGCMC::attempt_molecule_insertion()
     update_gas_atoms_list();
     ninsertion_successes += 1.0;
   }
+  delete[] procflag;
 }
 
 /* ----------------------------------------------------------------------
@@ -1409,7 +1540,8 @@ void FixGCMC::attempt_atomic_translation_full()
 
   double energy_after = energy_full();
 
-  if (random_equal->uniform() <
+  if (energy_after < MAXENERGYTEST &&
+      random_equal->uniform() <
       exp(beta*(energy_before - energy_after))) {
     energy_stored = energy_after;
     ntranslation_successes += 1.0;
@@ -1459,6 +1591,7 @@ void FixGCMC::attempt_atomic_deletion_full()
     }
   }
   if (force->kspace) force->kspace->qsum_qsq();
+  if (force->pair->tail_flag) force->pair->reinit();
   double energy_after = energy_full();
 
   if (random_equal->uniform() <
@@ -1477,6 +1610,7 @@ void FixGCMC::attempt_atomic_deletion_full()
       if (q_flag) atom->q[i] = q_tmp;
     }
     if (force->kspace) force->kspace->qsum_qsq();
+    if (force->pair->tail_flag) force->pair->reinit();
     energy_stored = energy_before;
   }
   update_gas_atoms_list();
@@ -1532,12 +1666,12 @@ void FixGCMC::attempt_atomic_insertion_full()
     if (!domain->inside(coord))
       error->one(FLERR,"Fix gcmc put atom outside box");
     if (coord[0] >= sublo[0] && coord[0] < subhi[0] &&
-	coord[1] >= sublo[1] && coord[1] < subhi[1] &&
-	coord[2] >= sublo[2] && coord[2] < subhi[2]) proc_flag = 1;
+        coord[1] >= sublo[1] && coord[1] < subhi[1] &&
+        coord[2] >= sublo[2] && coord[2] < subhi[2]) proc_flag = 1;
   } else {
     if (lamda[0] >= sublo[0] && lamda[0] < subhi[0] &&
-	lamda[1] >= sublo[1] && lamda[1] < subhi[1] &&
-	lamda[2] >= sublo[2] && lamda[2] < subhi[2]) proc_flag = 1;
+        lamda[1] >= sublo[1] && lamda[1] < subhi[1] &&
+        lamda[2] >= sublo[2] && lamda[2] < subhi[2]) proc_flag = 1;
   }
 
   if (proc_flag) {
@@ -1550,7 +1684,7 @@ void FixGCMC::attempt_atomic_insertion_full()
     atom->mask[m] = groupbitall;
     for (int igroup = 0; igroup < ngrouptypes; igroup++) {
       if (ngcmc_type == grouptypes[igroup])
-	atom->mask[m] |= grouptypebits[igroup];
+        atom->mask[m] |= grouptypebits[igroup];
     }
 
     atom->v[m][0] = random_unequal->gaussian()*sigma;
@@ -1570,9 +1704,11 @@ void FixGCMC::attempt_atomic_insertion_full()
   comm->borders();
   if (triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
   if (force->kspace) force->kspace->qsum_qsq();
+  if (force->pair->tail_flag) force->pair->reinit();
   double energy_after = energy_full();
 
-  if (random_equal->uniform() <
+  if (energy_after < MAXENERGYTEST &&
+      random_equal->uniform() <
       zz*volume*exp(beta*(energy_before - energy_after))/(ngas+1)) {
 
     ninsertion_successes += 1.0;
@@ -1581,6 +1717,7 @@ void FixGCMC::attempt_atomic_insertion_full()
     atom->natoms--;
     if (proc_flag) atom->nlocal--;
     if (force->kspace) force->kspace->qsum_qsq();
+    if (force->pair->tail_flag) force->pair->reinit();
     energy_stored = energy_before;
   }
   update_gas_atoms_list();
@@ -1614,10 +1751,9 @@ void FixGCMC::attempt_molecule_translation_full()
   com_displace[1] = displace*ry;
   com_displace[2] = displace*rz;
 
-  int nlocal = atom->nlocal;
   if (regionflag) {
     int *mask = atom->mask;
-    for (int i = 0; i < nlocal; i++) {
+    for (int i = 0; i < atom->nlocal; i++) {
       if (atom->molecule[i] == translation_molecule) {
         mask[i] |= molecule_group_bit;
       } else {
@@ -1647,25 +1783,26 @@ void FixGCMC::attempt_molecule_translation_full()
     com_displace[2] = displace*rz;
   }
 
-  for (int i = 0; i < nlocal; i++) {
+  for (int i = 0; i < atom->nlocal; i++) {
     if (atom->molecule[i] == translation_molecule) {
       x[i][0] += com_displace[0];
       x[i][1] += com_displace[1];
       x[i][2] += com_displace[2];
       if (!domain->inside_nonperiodic(x[i]))
-	error->one(FLERR,"Fix gcmc put atom outside box");
+        error->one(FLERR,"Fix gcmc put atom outside box");
     }
   }
 
   double energy_after = energy_full();
 
-  if (random_equal->uniform() <
+  if (energy_after < MAXENERGYTEST &&
+      random_equal->uniform() <
       exp(beta*(energy_before - energy_after))) {
     ntranslation_successes += 1.0;
     energy_stored = energy_after;
   } else {
     energy_stored = energy_before;
-    for (int i = 0; i < nlocal; i++) {
+    for (int i = 0; i < atom->nlocal; i++) {
       if (atom->molecule[i] == translation_molecule) {
         x[i][0] -= com_displace[0];
         x[i][1] -= com_displace[1];
@@ -1690,15 +1827,19 @@ void FixGCMC::attempt_molecule_rotation_full()
 
   double energy_before = energy_stored;
 
-  int nlocal = atom->nlocal;
   int *mask = atom->mask;
-  for (int i = 0; i < nlocal; i++) {
+  int nmolcoords = 0;
+  for (int i = 0; i < atom->nlocal; i++) {
     if (atom->molecule[i] == rotation_molecule) {
       mask[i] |= molecule_group_bit;
+      nmolcoords++;
     } else {
       mask[i] &= molecule_group_inversebit;
     }
   }
+
+  if (nmolcoords > nmaxmolatoms)
+    grow_molecule_arrays(nmolcoords);
 
   double com[3];
   com[0] = com[1] = com[2] = 0.0;
@@ -1723,14 +1864,14 @@ void FixGCMC::attempt_molecule_rotation_full()
 
   double **x = atom->x;
   imageint *image = atom->image;
-  imageint image_orig[natoms_per_molecule];
+
   int n = 0;
-  for (int i = 0; i < nlocal; i++) {
+  for (int i = 0; i < atom->nlocal; i++) {
     if (mask[i] & molecule_group_bit) {
-      atom_coord[n][0] = x[i][0];
-      atom_coord[n][1] = x[i][1];
-      atom_coord[n][2] = x[i][2];
-      image_orig[n] = image[i];
+      molcoords[n][0] = x[i][0];
+      molcoords[n][1] = x[i][1];
+      molcoords[n][2] = x[i][2];
+      molimage[n] = image[i];
       double xtmp[3];
       domain->unmap(x[i],image[i],xtmp);
       xtmp[0] -= com[0];
@@ -1743,26 +1884,27 @@ void FixGCMC::attempt_molecule_rotation_full()
       image[i] = imagezero;
       domain->remap(x[i],image[i]);
       if (!domain->inside(x[i]))
-	error->one(FLERR,"Fix gcmc put atom outside box");
+        error->one(FLERR,"Fix gcmc put atom outside box");
       n++;
     }
   }
 
   double energy_after = energy_full();
 
-  if (random_equal->uniform() <
+  if (energy_after < MAXENERGYTEST &&
+      random_equal->uniform() <
       exp(beta*(energy_before - energy_after))) {
     nrotation_successes += 1.0;
     energy_stored = energy_after;
   } else {
     energy_stored = energy_before;
     int n = 0;
-    for (int i = 0; i < nlocal; i++) {
+    for (int i = 0; i < atom->nlocal; i++) {
       if (mask[i] & molecule_group_bit) {
-        x[i][0] = atom_coord[n][0];
-        x[i][1] = atom_coord[n][1];
-        x[i][2] = atom_coord[n][2];
-        image[i] = image_orig[n];
+        x[i][0] = molcoords[n][0];
+        x[i][1] = molcoords[n][1];
+        x[i][2] = molcoords[n][2];
+        image[i] = molimage[n];
         n++;
       }
     }
@@ -1779,27 +1921,41 @@ void FixGCMC::attempt_molecule_deletion_full()
 
   if (ngas == 0) return;
 
+  // work-around to avoid n=0 problem with fix rigid/nvt/small
+
+  if (ngas == natoms_per_molecule) return;
+
   tagint deletion_molecule = pick_random_gas_molecule();
   if (deletion_molecule == -1) return;
 
   double energy_before = energy_stored;
 
+  // check nmolq, grow arrays if necessary
+
+  int nmolq = 0;
+  for (int i = 0; i < atom->nlocal; i++)
+    if (atom->molecule[i] == deletion_molecule)
+      if (atom->q_flag) nmolq++;
+
+  if (nmolq > nmaxmolatoms)
+    grow_molecule_arrays(nmolq);
+
   int m = 0;
-  double q_tmp[natoms_per_molecule];
-  int tmpmask[atom->nlocal];
+  int *tmpmask = new int[atom->nlocal];
   for (int i = 0; i < atom->nlocal; i++) {
     if (atom->molecule[i] == deletion_molecule) {
       tmpmask[i] = atom->mask[i];
       atom->mask[i] = exclusion_group_bit;
       toggle_intramolecular(i);
       if (atom->q_flag) {
-        q_tmp[m] = atom->q[i];
+        molq[m] = atom->q[i];
         m++;
         atom->q[i] = 0.0;
       }
     }
   }
   if (force->kspace) force->kspace->qsum_qsq();
+  if (force->pair->tail_flag) force->pair->reinit();
   double energy_after = energy_full();
 
   // energy_before corrected by energy_intra
@@ -1826,14 +1982,16 @@ void FixGCMC::attempt_molecule_deletion_full()
         atom->mask[i] = tmpmask[i];
         toggle_intramolecular(i);
         if (atom->q_flag) {
-          atom->q[i] = q_tmp[m];
+          atom->q[i] = molq[m];
           m++;
         }
       }
     }
     if (force->kspace) force->kspace->qsum_qsq();
+    if (force->pair->tail_flag) force->pair->reinit();
   }
   update_gas_atoms_list();
+  delete[] tmpmask;
 }
 
 /* ----------------------------------------------------------------------
@@ -1943,13 +2101,13 @@ void FixGCMC::attempt_molecule_insertion_full()
     int proc_flag = 0;
     if (triclinic == 0) {
       if (xtmp[0] >= sublo[0] && xtmp[0] < subhi[0] &&
-	  xtmp[1] >= sublo[1] && xtmp[1] < subhi[1] &&
-	  xtmp[2] >= sublo[2] && xtmp[2] < subhi[2]) proc_flag = 1;
+          xtmp[1] >= sublo[1] && xtmp[1] < subhi[1] &&
+          xtmp[2] >= sublo[2] && xtmp[2] < subhi[2]) proc_flag = 1;
     } else {
       domain->x2lamda(xtmp,lamda);
       if (lamda[0] >= sublo[0] && lamda[0] < subhi[0] &&
-	  lamda[1] >= sublo[1] && lamda[1] < subhi[1] &&
-	  lamda[2] >= sublo[2] && lamda[2] < subhi[2]) proc_flag = 1;
+          lamda[1] >= sublo[1] && lamda[1] < subhi[1] &&
+          lamda[2] >= sublo[2] && lamda[2] < subhi[2]) proc_flag = 1;
     }
 
     if (proc_flag) {
@@ -1961,8 +2119,8 @@ void FixGCMC::attempt_molecule_insertion_full()
 
       atom->mask[m] = groupbitall;
       for (int igroup = 0; igroup < ngrouptypes; igroup++) {
-	if (ngcmc_type == grouptypes[igroup])
-	  atom->mask[m] |= grouptypebits[igroup];
+        if (ngcmc_type == grouptypes[igroup])
+          atom->mask[m] |= grouptypebits[igroup];
       }
 
       atom->image[m] = imagetmp;
@@ -1979,9 +2137,15 @@ void FixGCMC::attempt_molecule_insertion_full()
     }
   }
 
-  if (shakeflag)
-    fixshake->set_molecule(nlocalprev,maxtag_all,imol,com_coord,vnew,quat);
+  // FixRigidSmall::set_molecule stores rigid body attributes
+  // FixShake::set_molecule stores shake info for molecule
 
+  for (int submol = 0; submol < nmol; ++submol) {
+    if (rigidflag)
+      fixrigid->set_molecule(nlocalprev,maxtag_all,submol,com_coord,vnew,quat);
+    else if (shakeflag)
+      fixshake->set_molecule(nlocalprev,maxtag_all,submol,com_coord,vnew,quat);
+  }
   atom->natoms += natoms_per_molecule;
   if (atom->natoms < 0)
     error->all(FLERR,"Too many total atoms");
@@ -1995,6 +2159,7 @@ void FixGCMC::attempt_molecule_insertion_full()
   comm->borders();
   if (triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
   if (force->kspace) force->kspace->qsum_qsq();
+  if (force->pair->tail_flag) force->pair->reinit();
   double energy_after = energy_full();
 
   // energy_after corrected by energy_intra
@@ -2002,7 +2167,8 @@ void FixGCMC::attempt_molecule_insertion_full()
   double deltaphi = zz*volume*natoms_per_molecule*
     exp(beta*(energy_before - (energy_after - energy_intra)))/(ngas + natoms_per_molecule);
 
-  if (random_equal->uniform() < deltaphi) {
+  if (energy_after < MAXENERGYTEST &&
+      random_equal->uniform() < deltaphi) {
 
     ninsertion_successes += 1.0;
     energy_stored = energy_after;
@@ -2024,6 +2190,7 @@ void FixGCMC::attempt_molecule_insertion_full()
       } else i++;
     }
     if (force->kspace) force->kspace->qsum_qsq();
+    if (force->pair->tail_flag) force->pair->reinit();
   }
   update_gas_atoms_list();
 }
@@ -2052,7 +2219,7 @@ double FixGCMC::energy(int i, int itype, tagint imolecule, double *coord)
   for (int j = 0; j < nall; j++) {
 
     if (i == j) continue;
-    if (mode == MOLECULE)
+    if (exchmode == EXCHMOL || movemode == MOVEMOL)
       if (imolecule == molecule[j]) continue;
 
     delx = coord[0] - x[j][0];
@@ -2060,6 +2227,12 @@ double FixGCMC::energy(int i, int itype, tagint imolecule, double *coord)
     delz = coord[2] - x[j][2];
     rsq = delx*delx + dely*dely + delz*delz;
     int jtype = type[j];
+
+    // if overlap check requested, if overlap,
+    // return signal value for energy
+
+    if (overlap_flag && rsq < overlap_cutoffsq)
+      return MAXENERGYSIGNAL;
 
     if (rsq < cutsq[itype][jtype])
       total_energy +=
@@ -2094,6 +2267,8 @@ double FixGCMC::molecule_energy(tagint gas_molecule_id)
 
 double FixGCMC::energy_full()
 {
+  int imolecule;
+
   if (triclinic) domain->x2lamda(atom->nlocal);
   domain->pbc();
   comm->exchange();
@@ -2101,9 +2276,49 @@ double FixGCMC::energy_full()
   comm->borders();
   if (triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
   if (modify->n_pre_neighbor) modify->pre_neighbor();
-  neighbor->build();
+  neighbor->build(1);
   int eflag = 1;
   int vflag = 0;
+
+  // if overlap check requested, if overlap,
+  // return signal value for energy
+
+  if (overlap_flag) {
+    int overlaptestall;
+    int overlaptest = 0;
+    double delx,dely,delz,rsq;
+    double **x = atom->x;
+    tagint *molecule = atom->molecule;
+    int nall = atom->nlocal + atom->nghost;
+    for (int i = 0; i < atom->nlocal; i++) {
+      if (exchmode == EXCHMOL || movemode == MOVEMOL)
+        imolecule = molecule[i];
+      for (int j = i+1; j < nall; j++) {
+        if (exchmode == EXCHMOL || movemode == MOVEMOL)
+          if (imolecule == molecule[j]) continue;
+
+        delx = x[i][0] - x[j][0];
+        dely = x[i][1] - x[j][1];
+        delz = x[i][2] - x[j][2];
+        rsq = delx*delx + dely*dely + delz*delz;
+
+        if (rsq < overlap_cutoffsq) {
+          overlaptest = 1;
+          break;
+        }
+      }
+      if (overlaptest) break;
+    }
+    MPI_Allreduce(&overlaptest, &overlaptestall, 1,
+                  MPI_INT, MPI_MAX, world);
+    if (overlaptestall) return MAXENERGYSIGNAL;
+  }
+
+  // clear forces so they don't accumulate over multiple
+  // calls within fix gcmc timestep, e.g. for fix shake
+
+  size_t nbytes = sizeof(double) * (atom->nlocal + atom->nghost);
+  if (nbytes) memset(&atom->f[0][0],0,3*nbytes);
 
   if (modify->n_pre_force) modify->pre_force(vflag);
 
@@ -2118,8 +2333,17 @@ double FixGCMC::energy_full()
 
   if (force->kspace) force->kspace->compute(eflag,vflag);
 
+  // unlike Verlet, not performing a reverse_comm() or forces here
+  // b/c GCMC does not care about forces
+  // don't think it will mess up energy due to any post_force() fixes
+
   if (modify->n_post_force) modify->post_force(vflag);
   if (modify->n_end_of_step) modify->end_of_step();
+
+  // NOTE: all fixes with THERMO_ENERGY mask set and which
+  //   operate at pre_force() or post_force() or end_of_step()
+  //   and which user has enable via fix_modify thermo yes,
+  //   will contribute to total MC energy via pe->compute_scalar()
 
   update->eflag_global = update->ntimestep;
   double total_energy = c_pe->compute_scalar();
@@ -2208,15 +2432,15 @@ void FixGCMC::update_gas_atoms_list()
 
   if (regionflag) {
 
-    if (mode == MOLECULE) {
+    if (exchmode == EXCHMOL || movemode == MOVEMOL) {
 
       tagint maxmol = 0;
       for (int i = 0; i < nlocal; i++) maxmol = MAX(maxmol,molecule[i]);
       tagint maxmol_all;
       MPI_Allreduce(&maxmol,&maxmol_all,1,MPI_LMP_TAGINT,MPI_MAX,world);
-      double comx[maxmol_all];
-      double comy[maxmol_all];
-      double comz[maxmol_all];
+      double *comx = new double[maxmol_all];
+      double *comy = new double[maxmol_all];
+      double *comz = new double[maxmol_all];
       for (int imolecule = 0; imolecule < maxmol_all; imolecule++) {
         for (int i = 0; i < nlocal; i++) {
           if (molecule[i] == imolecule) {
@@ -2228,6 +2452,10 @@ void FixGCMC::update_gas_atoms_list()
         double com[3];
         com[0] = com[1] = com[2] = 0.0;
         group->xcm(molecule_group,gas_mass,com);
+
+        // remap unwrapped com into periodic box
+
+        domain->remap(com);
         comx[imolecule] = com[0];
         comy[imolecule] = com[1];
         comz[imolecule] = com[2];
@@ -2242,7 +2470,9 @@ void FixGCMC::update_gas_atoms_list()
           }
         }
       }
-
+      delete[] comx;
+      delete[] comy;
+      delete[] comz;
     } else {
       for (int i = 0; i < nlocal; i++) {
         if (mask[i] & groupbit) {
@@ -2330,4 +2560,11 @@ void FixGCMC::restart(char *buf)
   random_unequal->reset(seed);
 
   next_reneighbor = static_cast<int> (list[n++]);
+}
+
+void FixGCMC::grow_molecule_arrays(int nmolatoms) {
+    nmaxmolatoms = nmolatoms;
+    molcoords = memory->grow(molcoords,nmaxmolatoms,3,"gcmc:molcoords");
+    molq = memory->grow(molq,nmaxmolatoms,"gcmc:molq");
+    molimage = memory->grow(molimage,nmaxmolatoms,"gcmc:molimage");
 }

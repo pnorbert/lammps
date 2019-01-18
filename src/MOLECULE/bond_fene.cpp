@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "bond_fene.h"
 #include "atom.h"
 #include "neighbor.h"
@@ -154,7 +154,7 @@ void BondFENE::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->nbondtypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->nbondtypes,ilo,ihi);
 
   double k_one = force->numeric(FLERR,arg[1]);
   double r0_one = force->numeric(FLERR,arg[2]);
@@ -242,7 +242,7 @@ void BondFENE::write_data(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double BondFENE::single(int type, double rsq, int i, int j,
+double BondFENE::single(int type, double rsq, int /*i*/, int /*j*/,
                         double &fforce)
 {
   double r0sq = r0[type] * r0[type];

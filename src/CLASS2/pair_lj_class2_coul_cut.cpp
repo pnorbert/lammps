@@ -11,9 +11,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_lj_class2_coul_cut.h"
 #include "atom.h"
 #include "comm.h"
@@ -202,7 +203,7 @@ void PairLJClass2CoulCut::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
+      for (j = i; j <= atom->ntypes; j++)
         if (setflag[i][j]) {
           cut_lj[i][j] = cut_lj_global;
           cut_coul[i][j] = cut_coul_global;
@@ -216,12 +217,14 @@ void PairLJClass2CoulCut::settings(int narg, char **arg)
 
 void PairLJClass2CoulCut::coeff(int narg, char **arg)
 {
-  if (narg < 4 || narg > 6) error->all(FLERR,"Incorrect args for pair coefficients");
+  if (narg < 4 || narg > 6)
+    error->all(FLERR,"Incorrect args for pair coefficients");
+
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double epsilon_one = force->numeric(FLERR,arg[2]);
   double sigma_one = force->numeric(FLERR,arg[3]);
@@ -286,7 +289,7 @@ double PairLJClass2CoulCut::init_one(int i, int j)
   lj3[i][j] = 2.0 * epsilon[i][j] * pow(sigma[i][j],9.0);
   lj4[i][j] = 3.0 * epsilon[i][j] * pow(sigma[i][j],6.0);
 
-  if (offset_flag) {
+  if (offset_flag && (cut_lj[i][j] > 0.0)) {
     double ratio = sigma[i][j] / cut_lj[i][j];
     offset[i][j] = epsilon[i][j] * (2.0*pow(ratio,9.0) - 3.0*pow(ratio,6.0));
   } else offset[i][j] = 0.0;
@@ -466,3 +469,16 @@ double PairLJClass2CoulCut::single(int i, int j, int itype, int jtype,
 
   return eng;
 }
+
+/* ---------------------------------------------------------------------- */
+
+void *PairLJClass2CoulCut::extract(const char *str, int &dim)
+{
+  dim = 0;
+  if (strcmp(str,"cut_coul") == 0) return (void *) &cut_coul;
+  dim = 2;
+  if (strcmp(str,"epsilon") == 0) return (void *) epsilon;
+  if (strcmp(str,"sigma") == 0) return (void *) sigma;
+  return NULL;
+}
+

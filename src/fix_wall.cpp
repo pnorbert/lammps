@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "fix_wall.h"
 #include "atom.h"
 #include "input.h"
@@ -35,7 +35,8 @@ enum{NONE=0,EDGE,CONSTANT,VARIABLE};
 /* ---------------------------------------------------------------------- */
 
 FixWall::FixWall(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  nwall(0)
 {
   scalar_flag = 1;
   vector_flag = 1;
@@ -44,10 +45,10 @@ FixWall::FixWall(LAMMPS *lmp, int narg, char **arg) :
   extvector = 1;
   respa_level_support = 1;
   ilevel_respa = 0;
+  virial_flag = 1;
 
   // parse args
 
-  nwall = 0;
   int scaleflag = 1;
   fldflag = 0;
   int pbcflag = 0;
@@ -201,6 +202,8 @@ FixWall::FixWall(LAMMPS *lmp, int narg, char **arg) :
 
 FixWall::~FixWall()
 {
+  if (copymode) return;
+
   for (int m = 0; m < nwall; m++) {
     delete [] xstr[m];
     delete [] estr[m];
@@ -296,7 +299,12 @@ void FixWall::pre_force(int vflag)
 
 void FixWall::post_force(int vflag)
 {
+
+  // energy and virial setup
+
   eflag = 0;
+  if (vflag) v_setup(vflag);
+  else evflag = 0;
   for (int m = 0; m <= nwall; m++) ewall[m] = 0.0;
 
   // coord = current position of wall
@@ -335,7 +343,7 @@ void FixWall::post_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixWall::post_force_respa(int vflag, int ilevel, int iloop)
+void FixWall::post_force_respa(int vflag, int ilevel, int /*iloop*/)
 {
   if (ilevel == ilevel_respa) post_force(vflag);
 }

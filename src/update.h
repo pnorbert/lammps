@@ -15,6 +15,8 @@
 #define LMP_UPDATE_H
 
 #include "pointers.h"
+#include <map>
+#include <string>
 
 namespace LAMMPS_NS {
 
@@ -33,6 +35,7 @@ class Update : protected Pointers {
   int max_eval;                   // max force evaluations for minimizer
   int restrict_output;            // 1 if output should not write dump/restart
   int setupflag;                  // set when setup() is computing forces
+  int post_integrate;             // 1 if now at post_integrate() in timestep
   int multireplica;               // 1 if min across replicas, else 0
 
   bigint eflag_global,eflag_atom;  // timestep global/peratom eng is tallied on
@@ -45,6 +48,15 @@ class Update : protected Pointers {
 
   class Min *minimize;
   char *minimize_style;
+
+  typedef Integrate *(*IntegrateCreator)(LAMMPS *,int,char**);
+  typedef Min *(*MinimizeCreator)(LAMMPS *);
+
+  typedef std::map<std::string,IntegrateCreator> IntegrateCreatorMap;
+  typedef std::map<std::string,MinimizeCreator> MinimizeCreatorMap;
+
+  IntegrateCreatorMap *integrate_map;
+  MinimizeCreatorMap *minimize_map;
 
   Update(class LAMMPS *);
   ~Update();
@@ -60,6 +72,8 @@ class Update : protected Pointers {
  private:
   void new_integrate(char *, int, char **, int, int &);
 
+  template <typename T> static Integrate *integrate_creator(LAMMPS *, int, char **);
+  template <typename T> static Min *minimize_creator(LAMMPS *);
 };
 
 }
@@ -67,14 +81,6 @@ class Update : protected Pointers {
 #endif
 
 /* ERROR/WARNING messages:
-
-E: USER-CUDA mode requires CUDA variant of run style
-
-CUDA mode is enabled, so the run style must include a cuda suffix.
-
-E: USER-CUDA mode requires CUDA variant of min style
-
-CUDA mode is enabled, so the min style must include a cuda suffix.
 
 E: Illegal ... command
 

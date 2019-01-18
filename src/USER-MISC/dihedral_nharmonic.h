@@ -20,7 +20,7 @@ DihedralStyle(nharmonic,DihedralNHarmonic)
 #ifndef DIHEDRAL_NHARMONIC_H
 #define DIHEDRAL_NHARMONIC_H
 
-#include <stdio.h>
+#include <cstdio>
 #include "dihedral.h"
 
 namespace LAMMPS_NS {
@@ -33,6 +33,7 @@ class DihedralNHarmonic : public Dihedral {
   void coeff(int, char **);
   void write_restart(FILE *);
   void read_restart(FILE *);
+  void write_data(FILE *);
 
  protected:
   int *nterms;

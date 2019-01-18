@@ -16,10 +16,10 @@
    Contributing author: Paolo Raiteri (Curtin University)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_lj_mdf.h"
 #include "atom.h"
 #include "comm.h"
@@ -82,7 +82,7 @@ void PairLJMDF::compute(int eflag, int vflag)
   firstneigh = list->firstneigh;
 
   // loop over neighbors of my atoms
-  
+
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
     xtmp = x[i][0];
@@ -109,7 +109,7 @@ void PairLJMDF::compute(int eflag, int vflag)
         forcelj = r6inv * (lj1[itype][jtype]*r6inv - lj2[itype][jtype]);
 
         if (rsq > cut_inner_sq[itype][jtype]) {
-          philj = r6inv*(lj3[itype][jtype]*r6inv-lj4[itype][jtype]);  
+          philj = r6inv*(lj3[itype][jtype]*r6inv-lj4[itype][jtype]);
 
           rr = sqrt(rsq);
           dp = (cut[itype][jtype] - cut_inner[itype][jtype]);
@@ -197,7 +197,7 @@ void PairLJMDF::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
+      for (j = i; j <= atom->ntypes; j++)
         if (setflag[i][j]) {
           cut_inner[i][j] = cut_inner_global;
           cut[i][j] = cut_global;
@@ -216,8 +216,8 @@ void PairLJMDF::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double epsilon_one = force->numeric(FLERR,arg[2]);
   double sigma_one = force->numeric(FLERR,arg[3]);
@@ -352,9 +352,9 @@ void PairLJMDF::read_restart_settings(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double PairLJMDF::single(int i, int j, int itype, int jtype,
+double PairLJMDF::single(int /*i*/, int /*j*/, int itype, int jtype,
                              double rsq,
-                             double factor_coul, double factor_lj,
+                             double /*factor_coul*/, double factor_lj,
                              double &fforce)
 {
   double r2inv,r6inv,forcelj,philj;

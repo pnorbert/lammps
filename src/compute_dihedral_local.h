@@ -33,12 +33,16 @@ class ComputeDihedralLocal : public Compute {
   double memory_usage();
 
  private:
-  int nvalues,pflag;
-  int ncount;
+  int nvalues,nvar,ncount,setflag;
+
+  int pvar;
+  int *bstyle,*vvar;
+  char *pstr;
+  char **vstr;
 
   int nmax;
-  double *vector;
-  double **array;
+  double *vlocal;
+  double **alocal;
 
   int compute_dihedrals(int);
   void reallocate(int);

@@ -18,7 +18,7 @@ OBJDIR =   Obj_$@
 OBJSHDIR = Obj_shared_$@
 
 SRC =	$(wildcard *.cpp)
-INC =	$(wildcard *.h)
+INC =	$(filter-out lmpinstalledpkgs.h,$(wildcard *.h))
 OBJ = 	$(SRC:.cpp=.o)
 
 SRCLIB = $(filter-out main.cpp,$(SRC))
@@ -43,21 +43,41 @@ endif
 
 # Package variables
 
+# PACKAGE    = standard packages
+# PACKUSER   = user packagse
+# PACKLIB    = all packages that require an additional lib
+#              should be PACKSYS + PACKINT + PACKEXT
+# PACKSYS    = subset that reqiure a common system library
+#              include MPIIO and LB b/c require full MPI, not just STUBS
+# PACKINT    = subset that require an internal (provided) library
+# PACKEXT    = subset that require an external (downloaded) library
+
 PACKAGE = asphere body class2 colloid compress coreshell dipole gpu \
-	  granular kim \
-	  kokkos kspace manybody mc meam misc molecule mpiio opt peri poems \
-	  python qeq reax replica rigid shock snap srd voronoi
+	  granular kim kokkos kspace latte manybody mc message misc \
+	  molecule mpiio mscg opt peri poems \
+	  python qeq replica rigid shock snap spin srd voronoi
 
-PACKUSER = user-atc user-awpmd user-cg-cmm user-colvars \
+PACKUSER = user-atc user-awpmd user-bocs user-cgdna user-cgsdk user-colvars \
 	   user-diffraction user-dpd user-drude user-eff user-fep user-h5md \
-	   user-intel user-lb user-manifold user-mgpt \
-	   user-misc user-molfile user-omp user-phonon user-qmmm user-qtb \
-	   user-quip user-reaxc user-smd user-smtbq user-sph user-tally \
-	   user-vtk
+	   user-intel user-lb user-manifold user-meamc user-meso \
+	   user-mgpt user-misc user-mofff user-molfile \
+	   user-netcdf user-omp user-phonon user-plumed user-ptm user-qmmm \
+	   user-qtb user-quip user-reaxc user-scafacos user-smd user-smtbq \
+	   user-sdpd user-sph user-tally user-uef user-vtk
 
-PACKLIB = compress gpu kim kokkos meam poems python reax voronoi \
-	  user-atc user-awpmd user-colvars user-h5md user-molfile \
-	  user-qmmm user-quip user-vtk
+PACKLIB = compress gpu kim kokkos latte message mpiio mscg poems \
+	  python voronoi \
+	  user-atc user-awpmd user-colvars user-h5md user-lb user-molfile \
+	  user-netcdf user-plumed user-qmmm user-quip user-scafacos \
+	  user-smd user-vtk
+
+PACKSYS = compress mpiio python user-lb
+
+PACKINT = gpu kokkos message poems user-atc user-awpmd user-colvars
+
+PACKEXT = kim latte mscg voronoi \
+	  user-h5md user-molfile user-netcdf user-plumed user-qmmm user-quip \
+	  user-smd user-vtk
 
 PACKALL = $(PACKAGE) $(PACKUSER)
 
@@ -66,6 +86,8 @@ PACKUSERUC = $(shell echo $(PACKUSER) | tr a-z A-Z)
 
 YESDIR = $(shell echo $(@:yes-%=%) | tr a-z A-Z)
 NODIR  = $(shell echo $(@:no-%=%) | tr a-z A-Z)
+LIBDIR = $(shell echo $(@:lib-%=%))
+LIBUSERDIR = $(shell echo $(@:lib-user-%=%))
 
 # List of all targets
 
@@ -75,10 +97,11 @@ help:
 	@echo 'make clean-machine       delete object files for one machine'
 	@echo 'make mpi-stubs           build dummy MPI library in STUBS'
 	@echo 'make install-python      install LAMMPS wrapper in Python'
-	@echo 'make tar                 create lmp_src.tar.gz of src dir and packages'
+	@echo 'make tar                 create lmp_src.tar.gz for src dir and packages'
 	@echo ''
-	@echo 'make package                 list available packages'
+	@echo 'make package                 list available packages and their dependencies'
 	@echo 'make package-status (ps)     status of all packages'
+	@echo 'make package-installed (pi)  list of installed packages'
 	@echo 'make yes-package             install a single pgk in src dir'
 	@echo 'make no-package              remove a single pkg from src dir'
 	@echo 'make yes-all                 install all pgks in src dir'
@@ -87,12 +110,18 @@ help:
 	@echo 'make no-standard (no-std)    remove all standard pkgs'
 	@echo 'make yes-user                install all user pkgs'
 	@echo 'make no-user                 remove all user pkgs'
-	@echo 'make no-lib                  remove all pkgs with external libs'
+	@echo 'make yes-lib       install all pkgs with libs (included or ext)'
+	@echo 'make no-lib        remove all pkgs with libs (included or ext)'
+	@echo 'make yes-ext                 install all pkgs with external libs'
+	@echo 'make no-ext                  remove all pkgs with external libs'
 	@echo ''
 	@echo 'make package-update (pu) replace src files with updated package files'
 	@echo 'make package-overwrite   replace package files with src files'
 	@echo 'make package-diff (pd)   diff src files against package files'
-	@echo 'make package-purge       purge obsolete copies of package sources'
+	@echo ''
+	@echo 'make lib-package         help for download/build/install a package library'
+	@echo 'make lib-package args="..."    download/build/install a package library'
+	@echo 'make purge               purge obsolete copies of source files'
 	@echo ''
 	@echo 'make machine             build LAMMPS for machine'
 	@echo 'make mode=lib machine    build LAMMPS as static lib for machine'
@@ -122,6 +151,21 @@ help:
 	  for file in $$files; do head -1 $$file; done
 	@echo ''
 
+
+lmpinstalledpkgs.h: $(SRC) $(INC)
+	@echo 'Gathering installed package information (may take a little while)'
+	@echo '#ifndef LMP_INSTALLED_PKGS_H' >  lmpinstalledpkgs.tmp
+	@echo '#define LMP_INSTALLED_PKGS_H' >> lmpinstalledpkgs.tmp
+	@echo 'const char * LAMMPS_NS::LAMMPS::installed_packages[] = {' >> lmpinstalledpkgs.tmp
+	@for p in $(PACKAGEUC) $(PACKUSERUC); do info=$$($(SHELL) Package.sh $$p installed); \
+             [ -n "$$info" ] && echo "\"$$info\"" | sed -e 's/".*package \(.*\)"/"\1",/' >> lmpinstalledpkgs.tmp || :; done
+	@echo ' NULL };' >> lmpinstalledpkgs.tmp
+	@echo '#endif' >> lmpinstalledpkgs.tmp
+	@if [ -f lmpinstalledpkgs.h ]; \
+          then test "`diff --brief lmpinstalledpkgs.tmp lmpinstalledpkgs.h`" != "" && \
+	        mv lmpinstalledpkgs.tmp lmpinstalledpkgs.h || rm lmpinstalledpkgs.tmp ; \
+        else mv lmpinstalledpkgs.tmp lmpinstalledpkgs.h ; fi
+
 # Build LAMMPS in one of 4 modes
 # exe =   exe with static compile in Obj_machine (default)
 # shexe = exe with shared compile in Obj_shared_machine
@@ -135,6 +179,8 @@ help:
 	  -f MAKE/MACHINES/Makefile.$@ -o -f MAKE/MINE/Makefile.$@
 	@if [ ! -d $(objdir) ]; then mkdir $(objdir); fi
 	@$(SHELL) Make.sh style
+	@$(MAKE) $(MFLAGS) lmpinstalledpkgs.h
+	@echo 'Compiling LAMMPS for machine $@'
 	@if [ -f MAKE/MACHINES/Makefile.$@ ]; \
 	  then cp MAKE/MACHINES/Makefile.$@ $(objdir)/Makefile; fi
 	@if [ -f MAKE/OPTIONS/Makefile.$@ ]; \
@@ -198,7 +244,10 @@ mpi-stubs:
 	@cd STUBS; $(MAKE) clean; $(MAKE)
 
 # install LAMMPS shared lib and Python wrapper for Python usage
+# include python package settings to
+#   automatically adapt name of python interpreter
 
+sinclude ../lib/python/Makefile.lammps
 install-python:
 	@$(PYTHON) ../python/install.py
 
@@ -221,21 +270,34 @@ package:
 	@echo ''
 	@echo 'User-contributed packages:' $(PACKUSER)
 	@echo ''
+	@echo 'Packages that need system libraries:' $(PACKSYS)
+	@echo ''
+	@echo 'Packages that need provided libraries:' $(PACKINT)
+	@echo ''
+	@echo 'Packages that need external libraries:' $(PACKEXT)
+	@echo ''
+	@echo 'make package                 list available packages'
 	@echo 'make package                 list available packages'
 	@echo 'make package-status (ps)     status of all packages'
+	@echo 'make package-installed (pi)  list of installed packages'
 	@echo 'make yes-package             install a single pgk in src dir'
 	@echo 'make no-package              remove a single pkg from src dir'
 	@echo 'make yes-all                 install all pgks in src dir'
 	@echo 'make no-all                  remove all pkgs from src dir'
 	@echo 'make yes-standard (yes-std)  install all standard pkgs'
-	@echo 'make no-standard (no-srd)    remove all standard pkgs'
-	@echo ''
+	@echo 'make no-standard (no-std)    remove all standard pkgs'
 	@echo 'make yes-user                install all user pkgs'
 	@echo 'make no-user                 remove all user pkgs'
-	@echo 'make no-lib                  remove all pkgs with external libs'
+	@echo 'make yes-lib       install all pkgs with libs (included or ext)'
+	@echo 'make no-lib        remove all pkgs with libs (included or ext)'
+	@echo 'make yes-ext                 install all pkgs with external libs'
+	@echo 'make no-ext                  remove all pkgs with external libs'
+	@echo ''
 	@echo 'make package-update (pu)  replace src files with package files'
 	@echo 'make package-overwrite    replace package files with src files'
 	@echo 'make package-diff (pd)    diff src files against package file'
+	@echo ''
+	@echo 'make lib-package      build and/or download a package library'
 
 yes-all:
 	@for p in $(PACKALL); do $(MAKE) yes-$$p; done
@@ -255,8 +317,17 @@ yes-user:
 no-user:
 	@for p in $(PACKUSER); do $(MAKE) no-$$p; done
 
+yes-lib:
+	@for p in $(PACKLIB); do $(MAKE) yes-$$p; done
+
 no-lib:
 	@for p in $(PACKLIB); do $(MAKE) no-$$p; done
+
+yes-ext:
+	@for p in $(PACKEXT); do $(MAKE) yes-$$p; done
+
+no-ext:
+	@for p in $(PACKEXT); do $(MAKE) no-$$p; done
 
 yes-%:
 	@if [ ! -e Makefile.package ]; \
@@ -288,7 +359,22 @@ no-%:
 		$(SHELL) Depend.sh $(NODIR) 0; \
         fi;
 
+# download/build/install a package library
+# update the timestamp on main.cpp to trigger a relink with "make machine"
+
+lib-%:
+	@if [ -e ../lib/$(LIBDIR)/Install.py ]; then \
+	  echo "Installing lib $(@:lib-%=%)"; \
+	  ( cd ../lib/$(LIBDIR); $(PYTHON) Install.py $(args) ); \
+	elif [ -e ../lib/$(LIBUSERDIR)/Install.py ]; then \
+	  echo "Installing lib $(@:lib-user-%=%)"; \
+	  ( cd ../lib/$(LIBUSERDIR); $(PYTHON) Install.py $(args) ); \
+	else \
+	  echo "Install script for lib $(@:lib-%=%) does not exist"; \
+	fi; touch main.cpp
+
 # status = list src files that differ from package files
+# installed = list of installed packages
 # update = replace src files with newer package files
 # overwrite = overwrite package files with newer src files
 # diff = show differences between src and package files
@@ -299,12 +385,16 @@ package-status ps:
 	@echo ''
 	@for p in $(PACKUSERUC); do $(SHELL) Package.sh $$p status; done
 
-package-update pu:
+package-installed pi:
+	@for p in $(PACKAGEUC); do $(SHELL) Package.sh $$p installed; done
+	@for p in $(PACKUSERUC); do $(SHELL) Package.sh $$p installed; done
+
+package-update pu: purge
 	@for p in $(PACKAGEUC); do $(SHELL) Package.sh $$p update; done
 	@echo ''
 	@for p in $(PACKUSERUC); do $(SHELL) Package.sh $$p update; done
 
-package-overwrite:
+package-overwrite: purge
 	@for p in $(PACKAGEUC); do $(SHELL) Package.sh $$p overwrite; done
 	@echo ''
 	@for p in $(PACKUSERUC); do $(SHELL) Package.sh $$p overwrite; done
@@ -314,7 +404,7 @@ package-diff pd:
 	@echo ''
 	@for p in $(PACKUSERUC); do $(SHELL) Package.sh $$p diff; done
 
-package-purge: Purge.list
+purge: Purge.list
 	@echo 'Purging obsolete and auto-generated source files'
 	@for f in `grep -v '#' Purge.list` ;		\
 	    do test -f $$f && rm $$f && echo $$f || : ;		\

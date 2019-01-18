@@ -16,9 +16,9 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "pair_table.h"
 #include "atom.h"
 #include "force.h"
@@ -46,6 +46,8 @@ PairTable::PairTable(LAMMPS *lmp) : Pair(lmp)
 
 PairTable::~PairTable()
 {
+  if (copymode) return;
+
   for (int m = 0; m < ntables; m++) free_table(&tables[m]);
   memory->sfree(tables);
 
@@ -111,7 +113,7 @@ void PairTable::compute(int eflag, int vflag)
       if (rsq < cutsq[itype][jtype]) {
         tb = &tables[tabindex[itype][jtype]];
         if (rsq < tb->innersq) {
-          sprintf(estr,"Pair distance < table inner cutoff: " 
+          sprintf(estr,"Pair distance < table inner cutoff: "
                   "ijtype %d %d dist %g",itype,jtype,sqrt(rsq));
           error->one(FLERR,estr);
         }
@@ -119,7 +121,7 @@ void PairTable::compute(int eflag, int vflag)
         if (tabstyle == LOOKUP) {
           itable = static_cast<int> ((rsq - tb->innersq) * tb->invdelta);
           if (itable >= tlm1) {
-            sprintf(estr,"Pair distance > table outer cutoff: " 
+            sprintf(estr,"Pair distance > table outer cutoff: "
                     "ijtype %d %d dist %g",itype,jtype,sqrt(rsq));
             error->one(FLERR,estr);
           }
@@ -127,7 +129,7 @@ void PairTable::compute(int eflag, int vflag)
         } else if (tabstyle == LINEAR) {
           itable = static_cast<int> ((rsq - tb->innersq) * tb->invdelta);
           if (itable >= tlm1) {
-            sprintf(estr,"Pair distance > table outer cutoff: " 
+            sprintf(estr,"Pair distance > table outer cutoff: "
                     "ijtype %d %d dist %g",itype,jtype,sqrt(rsq));
             error->one(FLERR,estr);
           }
@@ -137,7 +139,7 @@ void PairTable::compute(int eflag, int vflag)
         } else if (tabstyle == SPLINE) {
           itable = static_cast<int> ((rsq - tb->innersq) * tb->invdelta);
           if (itable >= tlm1) {
-            sprintf(estr,"Pair distance > table outer cutoff: " 
+            sprintf(estr,"Pair distance > table outer cutoff: "
                     "ijtype %d %d dist %g",itype,jtype,sqrt(rsq));
             error->one(FLERR,estr);
           }
@@ -263,8 +265,8 @@ void PairTable::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   int me;
   MPI_Comm_rank(world,&me);
@@ -360,7 +362,7 @@ void PairTable::read_table(Table *tb, char *file, char *keyword)
   FILE *fp = force->open_potential(file);
   if (fp == NULL) {
     char str[128];
-    sprintf(str,"Cannot open file %s",file);
+    snprintf(str,128,"Cannot open file %s",file);
     error->one(FLERR,str);
   }
 
@@ -451,20 +453,25 @@ void PairTable::read_table(Table *tb, char *file, char *keyword)
   double r,e,f,rprev,rnext,eprev,enext,fleft,fright;
 
   int ferror = 0;
-  for (int i = 1; i < tb->ninput-1; i++) {
-    r = tb->rfile[i];
-    rprev = tb->rfile[i-1];
-    rnext = tb->rfile[i+1];
-    e = tb->efile[i];
-    eprev = tb->efile[i-1];
-    enext = tb->efile[i+1];
-    f = tb->ffile[i];
-    fleft = - (e-eprev) / (r-rprev);
-    fright = - (enext-e) / (rnext-r);
-    if (f < fleft && f < fright) ferror++;
-    if (f > fleft && f > fright) ferror++;
-    //printf("Values %d: %g %g %g\n",i,r,e,f);
-    //printf("  secant %d %d %g: %g %g %g\n",i,ferror,r,fleft,fright,f);
+
+  // bitmapped tables do not follow regular ordering, so we cannot check them here
+
+  if (tb->rflag != BMP) {
+    for (int i = 1; i < tb->ninput-1; i++) {
+      r = tb->rfile[i];
+      rprev = tb->rfile[i-1];
+      rnext = tb->rfile[i+1];
+      e = tb->efile[i];
+      eprev = tb->efile[i-1];
+      enext = tb->efile[i+1];
+      f = tb->ffile[i];
+      fleft = - (e-eprev) / (r-rprev);
+      fright = - (enext-e) / (rnext-r);
+      if (f < fleft && f < fright) ferror++;
+      if (f > fleft && f > fright) ferror++;
+      //printf("Values %d: %g %g %g\n",i,r,e,f);
+      //printf("  secant %d %d %g: %g %g %g\n",i,ferror,r,fleft,fright,f);
+    }
   }
 
   if (ferror) {
@@ -554,7 +561,7 @@ void PairTable::spline_table(Table *tb)
 
 /* ----------------------------------------------------------------------
    extract attributes from parameter line in table section
-   format of line: N value R/RSQ/BITMAP lo hi FP fplo fphi
+   format of line: N value R/RSQ/BITMAP lo hi FPRIME fplo fphi
    N is required, other params are optional
 ------------------------------------------------------------------------- */
 
@@ -578,7 +585,7 @@ void PairTable::param_extract(Table *tb, char *line)
       tb->rlo = atof(word);
       word = strtok(NULL," \t\n\r\f");
       tb->rhi = atof(word);
-    } else if (strcmp(word,"FP") == 0) {
+    } else if (strcmp(word,"FPRIME") == 0) {
       tb->fpflag = 1;
       word = strtok(NULL," \t\n\r\f");
       tb->fplo = atof(word);
@@ -986,8 +993,8 @@ void PairTable::read_restart_settings(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double PairTable::single(int i, int j, int itype, int jtype, double rsq,
-                         double factor_coul, double factor_lj,
+double PairTable::single(int /*i*/, int /*j*/, int itype, int jtype, double rsq,
+                         double /*factor_coul*/, double factor_lj,
                          double &fforce)
 {
   int itable;

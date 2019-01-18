@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -47,23 +47,23 @@ style = {delete} or {index} or {loop} or {world} or {universe} or {uloop} or {st
     constants = PI, version, on, off, true, false, yes, no
     thermo keywords = vol, ke, press, etc from "thermo_style"_thermo_style.html
     math operators = (), -x, x+y, x-y, x*y, x/y, x^y, x%y,
-                     x == y, x != y, x < y, x <= y, x > y, x >= y, x && y, x || y, !x
+                     x == y, x != y, x < y, x <= y, x > y, x >= y, x && y, x || y, x |^ y, !x
     math functions = sqrt(x), exp(x), ln(x), log(x), abs(x),
                      sin(x), cos(x), tan(x), asin(x), acos(x), atan(x), atan2(y,x),
                      random(x,y,z), normal(x,y,z), ceil(x), floor(x), round(x)
-                     ramp(x,y), stagger(x,y), logfreq(x,y,z), logfreq2(x,y,z), 
-		     stride(x,y,z), stride2(x,y,z,a,b,c), 
-		     vdisplace(x,y), swiggle(x,y,z), cwiggle(x,y,z)
+                     ramp(x,y), stagger(x,y), logfreq(x,y,z), logfreq2(x,y,z),
+                     stride(x,y,z), stride2(x,y,z,a,b,c),
+                     vdisplace(x,y), swiggle(x,y,z), cwiggle(x,y,z)
     group functions = count(group), mass(group), charge(group),
-		      xcm(group,dim), vcm(group,dim), fcm(group,dim),
-		      bound(group,dir), gyration(group), ke(group),
-		      angmom(group,dim), torque(group,dim),
+                      xcm(group,dim), vcm(group,dim), fcm(group,dim),
+                      bound(group,dir), gyration(group), ke(group),
+                      angmom(group,dim), torque(group,dim),
                       inertia(group,dimdim), omega(group,dim)
     region functions = count(group,region), mass(group,region), charge(group,region),
-		      xcm(group,dim,region), vcm(group,dim,region), fcm(group,dim,region),
-		      bound(group,dir,region), gyration(group,region), ke(group,reigon),
-		      angmom(group,dim,region), torque(group,dim,region), 
-		      inertia(group,dimdim,region), omega(group,dim,region)
+                      xcm(group,dim,region), vcm(group,dim,region), fcm(group,dim,region),
+                      bound(group,dir,region), gyration(group,region), ke(group,reigon),
+                      angmom(group,dim,region), torque(group,dim,region),
+                      inertia(group,dimdim,region), omega(group,dim,region)
     special functions = sum(x), min(x), max(x), ave(x), trap(x), slope(x), gmask(x), rmask(x), grmask(x,y), next(x)
     feature functions = is_active(category,feature,exact), is_defined(category,id,exact)
     atom value = id\[i\], mass\[i\], type\[i\], mol\[i\], x\[i\], y\[i\], z\[i\], vx\[i\], vy\[i\], vz\[i\], fx\[i\], fy\[i\], fz\[i\], q\[i\]
@@ -124,8 +124,8 @@ provide, so that the variable gets its value from the evaluation of
 the Python code.  Variables of style {internal} are used by a few
 commands which set their value directly.
 
-NOTE: As discussed in "Section 3.2"_Section_commands.html#cmd_2 of the
-manual, an input script can use "immediate" variables, specified as
+NOTE: As discussed on the "Commands parse"_Commands_parse.html doc
+page, an input script can use "immediate" variables, specified as
 $(formula) with parenthesis, where the formula has the same syntax as
 equal-style variables described on this page.  This is a convenient
 way to evaluate a formula immediately without using the variable
@@ -178,9 +178,8 @@ This means variables can NOT be re-defined in an input script (with
 two exceptions, read further).  This is to allow an input script to be
 processed multiple times without resetting the variables; see the
 "jump"_jump.html or "include"_include.html commands.  It also means
-that using the "command-line switch"_Section_start.html#start_7 -var
-will override a corresponding index variable setting in the input
-script.
+that using the "command-line switch"_Run_options.html -var will
+override a corresponding index variable setting in the input script.
 
 There are two exceptions to this rule.  First, variables of style
 {string}, {getenv}, {internal}, {equal}, {vector}, {atom}, and
@@ -198,7 +197,7 @@ the same thing.
 
 :line
 
-"This section"_Section_commands.html#cmd_2 of the manual explains how
+The "Commands parse"_Commands_parse.html doc page explains how
 occurrences of a variable name in an input script line are replaced by
 the variable's string.  The variable name can be referenced as $x if
 the name "x" is a single character, or as $\{LoopVar\} if the name
@@ -219,13 +218,13 @@ script or when the input script is looped over.  This can be useful
 when breaking out of a loop via the "if"_if.html and "jump"_jump.html
 commands before the variable would become exhausted.  For example,
 
-label	    loop
+label       loop
 variable    a loop 5
-print	    "A = $a"
-if	    "$a > 2" then "jump in.script break"
-next	    a
-jump	    in.script loop
-label	    break
+print       "A = $a"
+if          "$a > 2" then "jump in.script break"
+next        a
+jump        in.script loop
+label       break
 variable    a delete :pre
 
 :line
@@ -247,8 +246,7 @@ string is assigned.  All processors assign the same string to the
 variable.
 
 {Index} style variables with a single string value can also be set by
-using the command-line switch -var; see "this
-section"_Section_start.html#start_7 for details.
+using the "command-line switch -var"_Run_options.html.
 
 The {loop} style is identical to the {index} style except that the
 strings are the integers from 1 to N inclusive, if only one argument N
@@ -263,32 +261,31 @@ inclusive, and the string N1 is initially assigned to the variable.
 N1 <= N2 and N2 >= 0 is required.
 
 For the {world} style, one or more strings are specified.  There must
-be one string for each processor partition or "world".  See "this
-section"_Section_start.html#start_7 of the manual for information on
-running LAMMPS with multiple partitions via the "-partition"
-command-line switch.  This variable command assigns one string to each
-world.  All processors in the world are assigned the same string.  The
-next command cannot be used with {equal} style variables, since there
-is only one value per world.  This style of variable is useful when
-you wish to run different simulations on different partitions, or when
-performing a parallel tempering simulation (see the
+be one string for each processor partition or "world".  LAMMPS can be
+run with multiple partitions via the "-partition command-line
+switch"_Run_options.html.  This variable command assigns one string to
+each world.  All processors in the world are assigned the same string.
+The next command cannot be used with {equal} style variables, since
+there is only one value per world.  This style of variable is useful
+when you wish to run different simulations on different partitions, or
+when performing a parallel tempering simulation (see the
 "temper"_temper.html command), to assign different temperatures to
 different partitions.
 
 For the {universe} style, one or more strings are specified.  There
 must be at least as many strings as there are processor partitions or
-"worlds".  See "this page"_Section_start.html#start_7 for information
-on running LAMMPS with multiple partitions via the "-partition"
-command-line switch.  This variable command initially assigns one
-string to each world.  When a "next"_next.html command is encountered
-using this variable, the first processor partition to encounter it, is
-assigned the next available string.  This continues until all the
-variable strings are consumed.  Thus, this command can be used to run
-50 simulations on 8 processor partitions.  The simulations will be run
-one after the other on whatever partition becomes available, until
-they are all finished.  {Universe} style variables are incremented
-using the files "tmp.lammps.variable" and "tmp.lammps.variable.lock"
-which you will see in your directory during such a LAMMPS run.
+"worlds".  LAMMPS can be run with multiple partitions via the
+"-partition command-line switch"_Run_options.html.  This variable
+command initially assigns one string to each world.  When a
+"next"_next.html command is encountered using this variable, the first
+processor partition to encounter it, is assigned the next available
+string.  This continues until all the variable strings are consumed.
+Thus, this command can be used to run 50 simulations on 8 processor
+partitions.  The simulations will be run one after the other on
+whatever partition becomes available, until they are all finished.
+{Universe} style variables are incremented using the files
+"tmp.lammps.variable" and "tmp.lammps.variable.lock" which you will
+see in your directory during such a LAMMPS run.
 
 The {uloop} style is identical to the {universe} style except that the
 strings are the integers from 1 to N.  This allows generation of long
@@ -296,17 +293,24 @@ list of runs (e.g. 1000) without having to list N strings in the input
 script.
 
 For the {string} style, a single string is assigned to the variable.
-The only difference between this and using the {index} style with a
-single string is that a variable with {string} style can be redefined.
-E.g. by another command later in the input script, or if the script is
-read again in a loop.
+Two differences between this this and using the {index} style exist:
+a variable with {string} style can be redefined, e.g. by another command later
+in the input script, or if the script is read again in a loop. The other
+difference is that {string} performs variable substitution even if the
+string parameter is quoted.
 
 For the {format} style, an equal-style variable is specified along
 with a C-style format string, e.g. "%f" or "%.10g", which must be
 appropriate for formatting a double-precision floating-point value.
-This allows an equal-style variable to be formatted specifically for
-output as a string, e.g. by the "print"_print.html command, if the
-default format "%.15g" has too much precision.
+The default format is "%.15g".  This variable style allows an
+equal-style variable to be formatted precisely when it is evaluated.
+
+If you simply wish to print a variable value with desired precision to
+the screen or logfile via the "print"_print.html or "fix
+print"_fix_print.html commands, you can also do this by specifying an
+"immediate" variable with a trailing colon and format string, as part
+of the string argument of those commands.  This is explained on the
+"Commands parse"_Commands_parse.html doc page.
 
 For the {getenv} style, a single string is assigned to the variable
 which should be the name of an environment variable.  When the
@@ -335,7 +339,7 @@ below.
 The rules for formatting the file are as follows.  A comment character
 "#" can be used anywhere on a line; text starting with the comment
 character is stripped.  Blank lines are skipped.  The first "word" of
-a non-blank line, delimited by white space, is the "string" assigned
+a non-blank line, delimited by white-space, is the "string" assigned
 to the variable.
 
 For the {atomfile} style, a filename is provided which contains one or
@@ -354,7 +358,7 @@ The rules for formatting the file are as follows.  Each time a set of
 per-atom values is read, a non-blank line is searched for in the file.
 A comment character "#" can be used anywhere on a line; text starting
 with the comment character is stripped.  Blank lines are skipped.  The
-first "word" of a non-blank line, delimited by white space, is read as
+first "word" of a non-blank line, delimited by white-space, is read as
 the count N of per-atom lines to immediately follow.  N can be be the
 total number of atoms in the system, or only a subset.  The next N
 lines have the following format
@@ -450,7 +454,7 @@ Number: 0.2, 100, 1.0e20, -15.4, etc
 Constant: PI, version, on, off, true, false, yes, no
 Thermo keywords: vol, pe, ebond, etc
 Math operators: (), -x, x+y, x-y, x*y, x/y, x^y, x%y, \
-     x == y, x != y, x < y, x <= y, x > y, x >= y, x && y, x || y, !x
+     x == y, x != y, x < y, x <= y, x > y, x >= y, x && y, x || y, x |^ y, !x
 Math functions: sqrt(x), exp(x), ln(x), log(x), abs(x), \
      sin(x), cos(x), tan(x), asin(x), acos(x), atan(x), atan2(y,x), \
      random(x,y,z), normal(x,y,z), ceil(x), floor(x), round(x), \
@@ -501,7 +505,7 @@ the group.
 
 :line
 
-Numers, constants, and thermo keywords :h4
+Numbers, constants, and thermo keywords :h4
 
 Numbers can contain digits, scientific notation
 (3.0e20,3.0e-20,3.0E20,3.0E-20), and leading minus signs.
@@ -551,9 +555,10 @@ division and the modulo operator "%" are next; addition and
 subtraction are next; the 4 relational operators "<", "<=", ">", and
 ">=" are next; the two remaining relational operators "==" and "!="
 are next; then the logical AND operator "&&"; and finally the logical
-OR operator "||" has the lowest precedence.  Parenthesis can be used
-to group one or more portions of a formula and/or enforce a different
-order of evaluation than what would occur with the default precedence.
+OR operator "||" and logical XOR (exclusive or) operator "|^" have the
+lowest precedence.  Parenthesis can be used to group one or more
+portions of a formula and/or enforce a different order of evaluation
+than what would occur with the default precedence.
 
 NOTE: Because a unary minus is higher precedence than exponentiation,
 the formula "-2^2" will evaluate to 4, not -4.  This convention is
@@ -568,12 +573,14 @@ return 1.0 for all atoms whose x-coordinate is less than 10.0, and 0.0
 for the others.  The logical AND operator will return 1.0 if both its
 arguments are non-zero, else it returns 0.0.  The logical OR operator
 will return 1.0 if either of its arguments is non-zero, else it
-returns 0.0.  The logical NOT operator returns 1.0 if its argument is
-0.0, else it returns 0.0.
+returns 0.0.  The logical XOR operator will return 1.0 if one of its
+arguments is zero and the other non-zero, else it returns 0.0.  The
+logical NOT operator returns 1.0 if its argument is 0.0, else it
+returns 0.0.
 
 These relational and logical operators can be used as a masking or
 selection operation in a formula.  For example, the number of atoms
-whose properties satifsy one or more criteria could be calculated by
+whose properties satisfy one or more criteria could be calculated by
 taking the returned per-atom vector of ones and zeroes and passing it
 to the "compute reduce"_compute_reduce.html command.
 
@@ -591,7 +598,7 @@ vector.  For example, "sqrt(natoms)" is the sqrt() of a scalar, where
 sqrt() of the product of one atom's y and z coordinates.
 
 Most of the math functions perform obvious operations.  The ln() is
-the natural log; log() is the base 10 log. 
+the natural log; log() is the base 10 log.
 
 The random(x,y,z) function takes 3 arguments: x = lo, y = hi, and z =
 seed.  It generates a uniform random number between lo and hi.  The
@@ -620,7 +627,7 @@ Floor() if the largest integer not greater than its argument.  Round()
 is the nearest integer to its argument.
 
 The ramp(x,y) function uses the current timestep to generate a value
-linearly intepolated between the specified x,y values over the course
+linearly interpolated between the specified x,y values over the course
 of a run, according to this formula:
 
 value = x + (y-x) * (timestep-startstep) / (stopstep-startstep) :pre
@@ -666,7 +673,7 @@ sequence of output timesteps:
 The stride(x,y,z) function uses the current timestep to generate a new
 timestep.  X,y >= 0 and z > 0 and x <= y are required.  The generated
 timesteps increase in increments of z, from x to y, i.e. it generates
-the sequece x,x+z,x+2z,...,y.  If y-x is not a multiple of z, then
+the sequence x,x+z,x+2z,...,y.  If y-x is not a multiple of z, then
 similar to the way a for loop operates, the last value will be one
 that does not exceed y.  For any current timestep, the next timestep
 in the sequence is returned.  Thus if stride(1000,2000,100) is used
@@ -686,7 +693,7 @@ increase in increments of z, starting at x, until a is reached.  At
 that point the timestep increases in increments of c, from a to b,
 then after b, increments by z are resumed until y is reached.  For any
 current timestep, the next timestep in the sequence is returned.  Thus
-if stride(1000,2000,100,1350,1360,1) is used in a variable by the
+if stride2(1000,2000,100,1350,1360,1) is used in a variable by the
 "dump_modify every"_dump_modify.html command, it will generate the
 sequence of output timesteps:
 
@@ -778,7 +785,7 @@ is for a vector-style variable where "name" is replaced by the name of
 the variable.
 
 These functions operate on a global vector of inputs and reduce it to
-a single scalar value.  This is analagous to the operation of the
+a single scalar value.  This is analogous to the operation of the
 "compute reduce"_compute_reduce.html command, which performs similar
 operations on per-atom and local vectors.
 
@@ -894,11 +901,25 @@ The {is_defined()} function allows to query categories like {compute},
 {dump}, {fix}, {group}, {region}, and {variable} whether an entry
 with the provided name or id is defined.
 
-The {is_available()} function allows to query whether a specific
-optional feature is available, i.e. compiled in. This currently
-works for the following categories: {command}, {compute}, {fix},
-and {pair_style}. For all categories except {command} also appending
-active suffixes is tried before reporting failure.
+The {is_available(category,name)} function allows to query whether
+a specific optional feature is available, i.e. compiled in.
+This currently works for the following categories: {command},
+{compute}, {fix}, {pair_style} and {feature}. For all categories
+except {command} and {feature} also appending active suffixes is
+tried before reporting failure.
+
+The {feature} category is used to check the availability of compiled in
+features such as GZIP support, PNG support, JPEG support, FFMPEG support,
+and C++ exceptions for error handling. Corresponding values for name are
+{gzip}, {png}, {jpeg}, {ffmpeg} and {exceptions}.
+
+This enables writing input scripts which only dump using a given format if
+the compiled binary supports it.
+
+if "$(is_available(feature,png))" then "print 'PNG supported'" else "print 'PNG not supported'" :pre
+
+if "$(is_available(feature,ffmpeg)" then "dump 3 all movie 25 movie.mp4 type type zoom 1.6 adiam 1.0" :pre
+
 
 :line
 
@@ -1048,10 +1069,10 @@ Variable References :h4
 Variable references access quantities stored or calculated by other
 variables, which will cause those variables to be evaluated.  The name
 in the reference should be replaced by the name of a variable defined
-elsewhere in the input script. 
+elsewhere in the input script.
 
 As discussed on this doc page, equal-style variables generate a single
-global numeric value, vector-style variables gerarate a vector of
+global numeric value, vector-style variables generate a vector of
 global numeric values, and atom-style and atomfile-style variables
 generate a per-atom vector of numeric values.  All other variables
 store one or more strings.
@@ -1095,24 +1116,23 @@ Vectors" discussion above.
 
 If you want an equal-style variable to be evaluated immediately, it
 may be the case that you do not need to define a variable at all.  See
-"Section 3.2"_Section_commands.html#cmd_2 of the manual, which
-describes the use of "immediate" variables in an input script,
-specified as $(formula) with parenthesis, where the formula has the
-same syntax as equal-style variables described on this page.  This
-effectively evaluates a formula immediately without using the variable
-command to define a named variable.
+the "Commands parse"_Commands_parse.html doc page for info on how to
+use "immediate" variables in an input script, specified as $(formula)
+with parenthesis, where the formula has the same syntax as equal-style
+variables described on this page.  This effectively evaluates a
+formula immediately without using the variable command to define a
+named variable.
 
 More generally, there is a difference between referencing a variable
 with a leading $ sign (e.g. $x or $\{abc\}) versus with a leading "v_"
 (e.g. v_x or v_abc).  The former can be used in any input script
 command, including a variable command.  The input script parser
 evaluates the reference variable immediately and substitutes its value
-into the command.  As explained in "Section commands
-3.2"_Section_commands.html#3_2 for "Parsing rules", you can also use
-un-named "immediate" variables for this purpose.  For example, a
-string like this $((xlo+xhi)/2+sqrt(v_area)) in an input script
-command evaluates the string between the parenthesis as an equal-style
-variable formula.
+into the command.  As explained on the "Commands
+parse"_Commands_parse.html doc page, you can also use un-named
+"immediate" variables for this purpose.  For example, a string like
+this $((xlo+xhi)/2+sqrt(v_area)) in an input script command evaluates
+the string between the parenthesis as an equal-style variable formula.
 
 Referencing a variable with a leading "v_" is an optional or required
 kind of argument for some commands (e.g. the "fix
@@ -1152,14 +1172,13 @@ would print out both the current and initial volume periodically
 during the run.
 
 Note that it is a mistake to enclose a variable formula in double
-quotes if it contains variables preceeded by $ signs.  For example,
+quotes if it contains variables preceded by $ signs.  For example,
 
 variable vratio equal "$\{vfinal\}/$\{v0\}" :pre
 
-This is because the quotes prevent variable substitution (see "this
-section"_Section_commands.html#cmd_2 on parsing input script
-commands), and thus an error will occur when the formula for "vratio"
-is evaluated later.
+This is because the quotes prevent variable substitution (explained on
+the "Commands parse"_Commands_parse.html doc page), and thus an error
+will occur when the formula for "vratio" is evaluated later.
 
 :line
 
@@ -1197,7 +1216,7 @@ three kinds of behavior:
 
 (1) The variable may be evaluated accurately.  If it contains
 references to a compute or fix, and these values were calculated on
-the last timestep of a preceeding run, then they will be accessed and
+the last timestep of a preceding run, then they will be accessed and
 used by the variable and the result will be accurate.
 
 (2) LAMMPS may not be able to evaluate the variable and will generate

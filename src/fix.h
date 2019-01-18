@@ -36,6 +36,7 @@ class Fix : protected Pointers {
 
   bigint next_reneighbor;        // next timestep to force a reneighboring
   int thermo_energy;             // 1 if fix_modify enabled ThEng, 0 if not
+  int thermo_virial;             // 1 if fix_modify enabled ThVir, 0 if not
   int nevery;                    // how often to call an end_of_step fix
   int rigid_flag;                // 1 if Fix integrates rigid bodies, 0 if not
   int peatom_flag;               // 1 if Fix contributes per-atom eng, 0 if not
@@ -89,20 +90,16 @@ class Fix : protected Pointers {
   int comm_reverse;              // size of reverse communication (0 if none)
   int comm_border;               // size of border communication (0 if none)
 
-  double virial[6];              // accumlated virial
+  double virial[6];              // accumulated virial
   double *eatom,**vatom;         // accumulated per-atom energy/virial
 
   int restart_reset;             // 1 if restart just re-initialized fix
 
   // KOKKOS host/device flag and data masks
 
+  int kokkosable;                // 1 if Kokkos fix
   ExecutionSpace execution_space;
   unsigned int datamask_read,datamask_modify;
-
-  // USER-CUDA per-fix data masks
-
-  unsigned int datamask;
-  unsigned int datamask_ext;
 
   Fix(class LAMMPS *, int, char **);
   virtual ~Fix();
@@ -116,12 +113,15 @@ class Fix : protected Pointers {
   virtual void setup(int) {}
   virtual void setup_pre_exchange() {}
   virtual void setup_pre_neighbor() {}
+  virtual void setup_post_neighbor() {}
   virtual void setup_pre_force(int) {}
+  virtual void setup_pre_reverse(int, int) {}
   virtual void min_setup(int) {}
   virtual void initial_integrate(int) {}
   virtual void post_integrate() {}
   virtual void pre_exchange() {}
   virtual void pre_neighbor() {}
+  virtual void post_neighbor() {}
   virtual void pre_force(int) {}
   virtual void pre_reverse(int,int) {}
   virtual void post_force(int) {}
@@ -155,12 +155,11 @@ class Fix : protected Pointers {
   virtual void post_force_respa(int, int, int) {}
   virtual void final_integrate_respa(int, int) {}
 
-  virtual void min_setup_pre_exchange() {}
-  virtual void min_setup_pre_neighbor() {}
-  virtual void min_setup_pre_force(int) {}
   virtual void min_pre_exchange() {}
   virtual void min_pre_neighbor() {}
+  virtual void min_post_neighbor() {}
   virtual void min_pre_force(int) {}
+  virtual void min_pre_reverse(int,int) {}
   virtual void min_post_force(int) {}
 
   virtual double min_energy(double *) {return 0.0;}
@@ -211,9 +210,6 @@ class Fix : protected Pointers {
 
   virtual double memory_usage() {return 0.0;}
 
-  virtual unsigned int data_mask() {return datamask;}
-  virtual unsigned int data_mask_ext() {return datamask_ext;}
-
  protected:
   int instance_me;        // which Fix class instantiation I am
 
@@ -225,10 +221,14 @@ class Fix : protected Pointers {
   int copymode;   // if set, do not deallocate during destruction
                   // required when classes are used as functors by Kokkos
 
+  int dynamic;    // recount atoms for temperature computes
+
   void ev_setup(int, int);
   void ev_tally(int, int *, double, double, double *);
   void v_setup(int);
   void v_tally(int, int *, double, double *);
+  void v_tally(int, double *);
+  void v_tally(int, int, double);
 
   // union data struct for packing 32-bit and 64-bit ints into double bufs
   // see atom_vec.h for documentation
@@ -247,24 +247,27 @@ namespace FixConst {
   static const int POST_INTEGRATE =          1<<1;
   static const int PRE_EXCHANGE =            1<<2;
   static const int PRE_NEIGHBOR =            1<<3;
-  static const int PRE_FORCE =               1<<4;
-  static const int POST_FORCE =              1<<5;
-  static const int FINAL_INTEGRATE =         1<<6;
-  static const int END_OF_STEP =             1<<7;
-  static const int THERMO_ENERGY =           1<<8;
-  static const int INITIAL_INTEGRATE_RESPA = 1<<9;
-  static const int POST_INTEGRATE_RESPA =    1<<10;
-  static const int PRE_FORCE_RESPA =         1<<11;
-  static const int POST_FORCE_RESPA =        1<<12;
-  static const int FINAL_INTEGRATE_RESPA =   1<<13;
-  static const int MIN_PRE_EXCHANGE =        1<<14;
-  static const int MIN_PRE_NEIGHBOR =        1<<15;
-  static const int MIN_PRE_FORCE =           1<<16;
-  static const int MIN_POST_FORCE =          1<<17;
-  static const int MIN_ENERGY =              1<<18;
-  static const int POST_RUN =                1<<19;
-  static const int PRE_REVERSE =             1<<20;
-  static const int FIX_CONST_LAST =          1<<21;
+  static const int POST_NEIGHBOR =           1<<4;
+  static const int PRE_FORCE =               1<<5;
+  static const int PRE_REVERSE =             1<<6;
+  static const int POST_FORCE =              1<<7;
+  static const int FINAL_INTEGRATE =         1<<8;
+  static const int END_OF_STEP =             1<<9;
+  static const int POST_RUN =                1<<10;
+  static const int THERMO_ENERGY =           1<<11;
+  static const int INITIAL_INTEGRATE_RESPA = 1<<12;
+  static const int POST_INTEGRATE_RESPA =    1<<13;
+  static const int PRE_FORCE_RESPA =         1<<14;
+  static const int POST_FORCE_RESPA =        1<<15;
+  static const int FINAL_INTEGRATE_RESPA =   1<<16;
+  static const int MIN_PRE_EXCHANGE =        1<<17;
+  static const int MIN_PRE_NEIGHBOR =        1<<18;
+  static const int MIN_POST_NEIGHBOR =       1<<19;
+  static const int MIN_PRE_FORCE =           1<<20;
+  static const int MIN_PRE_REVERSE =         1<<21;
+  static const int MIN_POST_FORCE =          1<<22;
+  static const int MIN_ENERGY =              1<<23;
+  static const int FIX_CONST_LAST =          1<<24;
 }
 
 }

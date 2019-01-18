@@ -15,8 +15,8 @@
    Contributing author: Stan Moore (SNL)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "angle_charmm_kokkos.h"
 #include "atom_kokkos.h"
 #include "neighbor_kokkos.h"
@@ -24,7 +24,7 @@
 #include "comm.h"
 #include "force.h"
 #include "math_const.h"
-#include "memory.h"
+#include "memory_kokkos.h"
 #include "error.h"
 #include "atom_masks.h"
 
@@ -51,8 +51,8 @@ template<class DeviceType>
 AngleCharmmKokkos<DeviceType>::~AngleCharmmKokkos()
 {
   if (!copymode) {
-    memory->destroy_kokkos(k_eatom,eatom);
-    memory->destroy_kokkos(k_vatom,vatom);
+    memoryKK->destroy_kokkos(k_eatom,eatom);
+    memoryKK->destroy_kokkos(k_vatom,vatom);
   }
 }
 
@@ -64,28 +64,25 @@ void AngleCharmmKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
   eflag = eflag_in;
   vflag = vflag_in;
 
-  if (eflag || vflag) ev_setup(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag,0);
   else evflag = 0;
 
   // reallocate per-atom arrays if necessary
 
   if (eflag_atom) {
-    if(k_eatom.dimension_0()<maxeatom) {
-      memory->destroy_kokkos(k_eatom,eatom);
-      memory->create_kokkos(k_eatom,eatom,maxeatom,"improper:eatom");
-      d_eatom = k_eatom.d_view;
-    }
+    //if(k_eatom.extent(0)<maxeatom) { // won't work without adding zero functor
+      memoryKK->destroy_kokkos(k_eatom,eatom);
+      memoryKK->create_kokkos(k_eatom,eatom,maxeatom,"improper:eatom");
+      d_eatom = k_eatom.template view<DeviceType>();
+    //}
   }
   if (vflag_atom) {
-    if(k_vatom.dimension_0()<maxvatom) {
-      memory->destroy_kokkos(k_vatom,vatom);
-      memory->create_kokkos(k_vatom,vatom,maxvatom,6,"improper:vatom");
-      d_vatom = k_vatom.d_view;
-    }
+    //if(k_vatom.extent(0)<maxvatom) { // won't work without adding zero functor
+      memoryKK->destroy_kokkos(k_vatom,vatom);
+      memoryKK->create_kokkos(k_vatom,vatom,maxvatom,6,"improper:vatom");
+      d_vatom = k_vatom.template view<DeviceType>();
+    //}
   }
-
-  if (eflag || vflag) atomKK->modified(execution_space,datamask_modify);
-  else atomKK->modified(execution_space,F_MASK);
 
   x = atomKK->k_x.view<DeviceType>();
   f = atomKK->k_f.view<DeviceType>();
@@ -114,7 +111,6 @@ void AngleCharmmKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
       Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagAngleCharmmCompute<0,0> >(0,nanglelist),*this);
     }
   }
-  DeviceType::fence();
 
   if (eflag_global) energy += ev.evdwl;
   if (vflag_global) {
@@ -275,10 +271,10 @@ void AngleCharmmKokkos<DeviceType>::coeff(int narg, char **arg)
   Kokkos::DualView<F_FLOAT*,DeviceType> k_k_ub("AngleCharmm::k_ub",n+1);
   Kokkos::DualView<F_FLOAT*,DeviceType> k_r_ub("AngleCharmm::r_ub",n+1);
 
-  d_k = k_k.d_view;
-  d_theta0 = k_theta0.d_view;
-  d_k_ub = k_k_ub.d_view;
-  d_r_ub = k_r_ub.d_view;
+  d_k = k_k.template view<DeviceType>();
+  d_theta0 = k_theta0.template view<DeviceType>();
+  d_k_ub = k_k_ub.template view<DeviceType>();
+  d_r_ub = k_r_ub.template view<DeviceType>();
 
   for (int i = 1; i <= n; i++) {
     k_k.h_view[i] = k[i];
@@ -296,7 +292,44 @@ void AngleCharmmKokkos<DeviceType>::coeff(int narg, char **arg)
   k_theta0.template sync<DeviceType>();
   k_k_ub.template sync<DeviceType>();
   k_r_ub.template sync<DeviceType>();
+}
 
+/* ----------------------------------------------------------------------
+   proc 0 reads coeffs from restart file, bcasts them
+------------------------------------------------------------------------- */
+
+template<class DeviceType>
+void AngleCharmmKokkos<DeviceType>::read_restart(FILE *fp)
+{
+  AngleCharmm::read_restart(fp);
+
+  int n = atom->nangletypes;
+  Kokkos::DualView<F_FLOAT*,DeviceType> k_k("AngleCharmm::k",n+1);
+  Kokkos::DualView<F_FLOAT*,DeviceType> k_theta0("AngleCharmm::theta0",n+1);
+  Kokkos::DualView<F_FLOAT*,DeviceType> k_k_ub("AngleCharmm::k_ub",n+1);
+  Kokkos::DualView<F_FLOAT*,DeviceType> k_r_ub("AngleCharmm::r_ub",n+1);
+
+  d_k = k_k.template view<DeviceType>();
+  d_theta0 = k_theta0.template view<DeviceType>();
+  d_k_ub = k_k_ub.template view<DeviceType>();
+  d_r_ub = k_r_ub.template view<DeviceType>();
+
+  for (int i = 1; i <= n; i++) {
+    k_k.h_view[i] = k[i];
+    k_theta0.h_view[i] = theta0[i];
+    k_k_ub.h_view[i] = k_ub[i];
+    k_r_ub.h_view[i] = r_ub[i];
+  }
+
+  k_k.template modify<LMPHostType>();
+  k_theta0.template modify<LMPHostType>();
+  k_k_ub.template modify<LMPHostType>();
+  k_r_ub.template modify<LMPHostType>();
+
+  k_k.template sync<DeviceType>();
+  k_theta0.template sync<DeviceType>();
+  k_k_ub.template sync<DeviceType>();
+  k_r_ub.template sync<DeviceType>();
 }
 
 /* ----------------------------------------------------------------------

@@ -11,12 +11,11 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
-#include <stdlib.h>
+#include <cstring>
+#include <cstdlib>
 #include "fix_addforce.h"
 #include "atom.h"
 #include "atom_masks.h"
-#include "accelerator_kokkos.h"
 #include "update.h"
 #include "modify.h"
 #include "domain.h"
@@ -36,7 +35,9 @@ enum{NONE,CONSTANT,EQUAL,ATOM};
 /* ---------------------------------------------------------------------- */
 
 FixAddForce::FixAddForce(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  xstr(NULL), ystr(NULL), zstr(NULL), estr(NULL), idregion(NULL), sforce(NULL)
+
 {
   if (narg < 6) error->all(FLERR,"Illegal fix addforce command");
 
@@ -49,6 +50,7 @@ FixAddForce::FixAddForce(LAMMPS *lmp, int narg, char **arg) :
   extvector = 1;
   respa_level_support = 1;
   ilevel_respa = 0;
+  virial_flag = 1;
 
   xstr = ystr = zstr = NULL;
 
@@ -81,8 +83,6 @@ FixAddForce::FixAddForce(LAMMPS *lmp, int narg, char **arg) :
 
   nevery = 1;
   iregion = -1;
-  idregion = NULL;
-  estr = NULL;
 
   int iarg = 6;
   while (iarg < narg) {
@@ -203,13 +203,10 @@ void FixAddForce::init()
       update->whichflag == 2 && estyle == NONE)
     error->all(FLERR,"Must use variable energy with fix addforce");
 
-  int max_respa = 0;
-
-  if (strstr(update->integrate_style,"respa"))
-    max_respa = ((Respa *) update->integrate)->nlevels-1;
-
-  if (respa_level >= 0)
-    ilevel_respa = MIN(respa_level,max_respa);
+  if (strstr(update->integrate_style,"respa")) {
+    ilevel_respa = ((Respa *) update->integrate)->nlevels-1;
+    if (respa_level >= 0) ilevel_respa = MIN(respa_level,ilevel_respa);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -240,9 +237,15 @@ void FixAddForce::post_force(int vflag)
   double **f = atom->f;
   int *mask = atom->mask;
   imageint *image = atom->image;
+  double v[6];
   int nlocal = atom->nlocal;
 
   if (update->ntimestep % nevery) return;
+
+  // energy and virial setup
+
+  if (vflag) v_setup(vflag);
+  else evflag = 0;
 
   if (lmp->kokkos)
     atom->sync_modify(Host, (unsigned int) (F_MASK | MASK_MASK),
@@ -286,6 +289,15 @@ void FixAddForce::post_force(int vflag)
         f[i][0] += xvalue;
         f[i][1] += yvalue;
         f[i][2] += zvalue;
+        if (evflag) {
+          v[0] = xvalue * unwrap[0];
+          v[1] = yvalue * unwrap[1];
+          v[2] = zvalue * unwrap[2];
+          v[3] = xvalue * unwrap[1];
+          v[4] = xvalue * unwrap[2];
+          v[5] = yvalue * unwrap[2];
+          v_tally(i,v);
+        }
       }
 
   // variable force, wrap with clear/add
@@ -293,6 +305,7 @@ void FixAddForce::post_force(int vflag)
   // wrap with clear/add
 
   } else {
+    double unwrap[3];
 
     modify->clearstep_compute();
 
@@ -310,26 +323,45 @@ void FixAddForce::post_force(int vflag)
 
     modify->addstep_compute(update->ntimestep + 1);
 
-    for (int i = 0; i < nlocal; i++)
+    for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
         if (region && !region->match(x[i][0],x[i][1],x[i][2])) continue;
-        if (estyle == ATOM) foriginal[0] += sforce[i][3];
+        domain->unmap(x[i],image[i],unwrap);
+        if (xstyle == ATOM) xvalue = sforce[i][0];
+        if (ystyle == ATOM) yvalue = sforce[i][1];
+        if (zstyle == ATOM) zvalue = sforce[i][2];
+
+        if (estyle == ATOM) {
+          foriginal[0] += sforce[i][3];
+        } else {
+          if (xstyle) foriginal[0] -= xvalue*unwrap[0];
+          if (ystyle) foriginal[0] -= yvalue*unwrap[1];
+          if (zstyle) foriginal[0] -= zvalue*unwrap[2];
+        }
         foriginal[1] += f[i][0];
         foriginal[2] += f[i][1];
         foriginal[3] += f[i][2];
-        if (xstyle == ATOM) f[i][0] += sforce[i][0];
-        else if (xstyle) f[i][0] += xvalue;
-        if (ystyle == ATOM) f[i][1] += sforce[i][1];
-        else if (ystyle) f[i][1] += yvalue;
-        if (zstyle == ATOM) f[i][2] += sforce[i][2];
-        else if (zstyle) f[i][2] += zvalue;
+
+        if (xstyle) f[i][0] += xvalue;
+        if (ystyle) f[i][1] += yvalue;
+        if (zstyle) f[i][2] += zvalue;
+        if (evflag) {
+          v[0] = xstyle ? xvalue*unwrap[0] : 0.0;
+          v[1] = ystyle ? yvalue*unwrap[1] : 0.0;
+          v[2] = zstyle ? zvalue*unwrap[2] : 0.0;
+          v[3] = xstyle ? xvalue*unwrap[1] : 0.0;
+          v[4] = xstyle ? xvalue*unwrap[2] : 0.0;
+          v[5] = ystyle ? yvalue*unwrap[2] : 0.0;
+          v_tally(i, v);
+        }
       }
+    }
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixAddForce::post_force_respa(int vflag, int ilevel, int iloop)
+void FixAddForce::post_force_respa(int vflag, int ilevel, int /*iloop*/)
 {
   if (ilevel == ilevel_respa) post_force(vflag);
 }

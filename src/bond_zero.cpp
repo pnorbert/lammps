@@ -15,9 +15,9 @@
    Contributing author: Carsten Svaneborg (SDU)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "bond_zero.h"
 #include "atom.h"
 #include "force.h"
@@ -86,7 +86,7 @@ void BondZero::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->nbondtypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->nbondtypes,ilo,ihi);
 
   double r0_one = 0.0;
   if (coeffflag && (narg == 2))
@@ -149,8 +149,8 @@ void BondZero::write_data(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double BondZero::single(int type, double rsq, int i, int j,
-                        double &fforce)
+double BondZero::single(int /*type*/, double /*rsq*/, int /*i*/, int /*j*/,
+                        double & /*fforce*/)
 {
   return 0.0;
 }

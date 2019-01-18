@@ -15,7 +15,7 @@
    Contributing authors: Mike Parks (SNL), Ezwanur Rahman, J.T. Foster (UTSA)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
+#include <cmath>
 #include "fix_peri_neigh.h"
 #include "pair_peri_pmb.h"
 #include "pair_peri_lps.h"
@@ -140,7 +140,7 @@ void FixPeriNeigh::init()
 
 /* ---------------------------------------------------------------------- */
 
-void FixPeriNeigh::init_list(int id, NeighList *ptr)
+void FixPeriNeigh::init_list(int /*id*/, NeighList *ptr)
 {
   list = ptr;
 }
@@ -159,7 +159,7 @@ void FixPeriNeigh::min_setup(int vflag)
    must be done in setup (not init) since fix init comes before neigh init
 ------------------------------------------------------------------------- */
 
-void FixPeriNeigh::setup(int vflag)
+void FixPeriNeigh::setup(int /*vflag*/)
 {
   int i,j,ii,jj,itype,jtype,inum,jnum;
   double xtmp,ytmp,ztmp,delx,dely,delz,rsq;
@@ -302,9 +302,15 @@ void FixPeriNeigh::setup(int vflag)
   double **x0 = atom->x0;
   double half_lc = 0.5*(domain->lattice->xlattice);
   double vfrac_scale;
-  PairPeriLPS *pairlps = static_cast<PairPeriLPS*>(anypair);
-  PairPeriVES *pairves = static_cast<PairPeriVES*>(anypair);
-  PairPeriEPS *paireps = static_cast<PairPeriEPS*>(anypair);
+  PairPeriLPS *pairlps = NULL;
+  PairPeriVES *pairves = NULL;
+  PairPeriEPS *paireps = NULL;
+  if (isLPS)
+    pairlps = static_cast<PairPeriLPS*>(anypair);
+  else if (isVES)
+    pairves = static_cast<PairPeriVES*>(anypair);
+  else if (isEPS)
+    paireps = static_cast<PairPeriEPS*>(anypair);
 
   for (i = 0; i < nlocal; i++) {
     double xtmp0 = x0[i][0];
@@ -435,7 +441,7 @@ void FixPeriNeigh::grow_arrays(int nmax)
    copy values within local atom-based arrays
 ------------------------------------------------------------------------- */
 
-void FixPeriNeigh::copy_arrays(int i, int j, int delflag)
+void FixPeriNeigh::copy_arrays(int i, int j, int /*delflag*/)
 {
   npartner[j] = npartner[i];
   for (int m = 0; m < npartner[j]; m++) {
@@ -508,7 +514,7 @@ int FixPeriNeigh::unpack_exchange(int nlocal, double *buf)
 /* ---------------------------------------------------------------------- */
 
 int FixPeriNeigh::pack_forward_comm(int n, int *list, double *buf,
-                                    int pbc_flag, int *pbc)
+                                    int /*pbc_flag*/, int * /*pbc*/)
 {
   int i,j,m;
 

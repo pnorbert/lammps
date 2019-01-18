@@ -24,19 +24,23 @@
   <http://www.gnu.org/licenses/>.
   ----------------------------------------------------------------------*/
 
-#include "pair_reax_c.h"
+#include "pair_reaxc.h"
 #include "reaxc_allocate.h"
 #include "reaxc_list.h"
 #include "reaxc_reset_tools.h"
 #include "reaxc_tool_box.h"
 #include "reaxc_vector.h"
 
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
 /* allocate space for my_atoms
    important: we cannot know the exact number of atoms that will fall into a
    process's box throughout the whole simulation. therefore
    we need to make upper bound estimates for various data structures */
-int PreAllocate_Space( reax_system *system, control_params *control,
-                       storage *workspace, MPI_Comm comm )
+int PreAllocate_Space( reax_system *system, control_params * /*control*/,
+                       storage * workspace, MPI_Comm comm )
 {
   int mincap = system->mincap;
   double safezone = system->safezone;
@@ -49,14 +53,25 @@ int PreAllocate_Space( reax_system *system, control_params *control,
   system->my_atoms = (reax_atom*)
     scalloc( system->total_cap, sizeof(reax_atom), "my_atoms", comm );
 
+  // Nullify some arrays only used in omp styles
+  // Should be safe to do here since called in pair->setup();
+#ifdef LMP_USER_OMP
+  workspace->CdDeltaReduction = NULL;
+  workspace->forceReduction = NULL;
+  workspace->valence_angle_atom_myoffset = NULL;
+  workspace->my_ext_pressReduction = NULL;
+#else
+  LMP_UNUSED_PARAM(workspace);
+#endif
+
   return SUCCESS;
 }
 
 
 /*************       system        *************/
 
-int Allocate_System( reax_system *system, int local_cap, int total_cap,
-                     char *msg )
+int Allocate_System( reax_system *system, int /*local_cap*/, int total_cap,
+                     char * /*msg*/ )
 {
   system->my_atoms = (reax_atom*)
     realloc( system->my_atoms, total_cap*sizeof(reax_atom) );
@@ -103,11 +118,11 @@ void DeAllocate_System( reax_system *system )
 
 
 /*************       workspace        *************/
-void DeAllocate_Workspace( control_params *control, storage *workspace )
+void DeAllocate_Workspace( control_params * /*control*/, storage *workspace )
 {
   int i;
 
-  if( !workspace->allocated )
+  if (!workspace->allocated)
     return;
 
   workspace->allocated = 0;
@@ -174,19 +189,26 @@ void DeAllocate_Workspace( control_params *control, storage *workspace )
   sfree( workspace->q2, "q2" );
   sfree( workspace->p2, "p2" );
 
-  /* integrator */
+  /* integrator storage */
   sfree( workspace->v_const, "v_const" );
 
   /* force related storage */
   sfree( workspace->f, "f" );
   sfree( workspace->CdDelta, "CdDelta" );
 
+  /* reductions */
+#ifdef LMP_USER_OMP
+  if (workspace->CdDeltaReduction) sfree( workspace->CdDeltaReduction, "cddelta_reduce" );
+  if (workspace->forceReduction) sfree( workspace->forceReduction, "f_reduce" );
+  if (workspace->valence_angle_atom_myoffset) sfree( workspace->valence_angle_atom_myoffset, "valence_angle_atom_myoffset");
+  if (workspace->my_ext_pressReduction) sfree( workspace->my_ext_pressReduction, "ext_press_reduce");
+#endif
 }
 
 
-int Allocate_Workspace( reax_system *system, control_params *control,
+int Allocate_Workspace( reax_system * /*system*/, control_params * control,
                         storage *workspace, int local_cap, int total_cap,
-                        MPI_Comm comm, char *msg )
+                        MPI_Comm comm, char * /*msg*/ )
 {
   int i, total_real, total_rvec, local_rvec;
 
@@ -272,10 +294,24 @@ int Allocate_Workspace( reax_system *system, control_params *control,
   /* integrator storage */
   workspace->v_const = (rvec*) smalloc( local_rvec, "v_const", comm );
 
-  // /* force related storage */
+  /* force related storage */
   workspace->f = (rvec*) scalloc( total_cap, sizeof(rvec), "f", comm );
   workspace->CdDelta = (double*)
     scalloc( total_cap, sizeof(double), "CdDelta", comm );
+
+  // storage for reductions with multiple threads
+#ifdef LMP_USER_OMP
+  workspace->CdDeltaReduction = (double *) scalloc(sizeof(double), total_cap*control->nthreads,
+                                                 "cddelta_reduce", comm);
+
+  workspace->forceReduction = (rvec *) scalloc(sizeof(rvec), total_cap*control->nthreads,
+                                               "forceReduction", comm);
+
+  workspace->valence_angle_atom_myoffset = (int *) scalloc(sizeof(int), total_cap, "valence_angle_atom_myoffset", comm);
+  workspace->my_ext_pressReduction = (rvec *) calloc(sizeof(rvec), control->nthreads);
+#else
+  LMP_UNUSED_PARAM(control);
+#endif
 
   return SUCCESS;
 }
@@ -295,20 +331,20 @@ static void Reallocate_Neighbor_List( reax_list *far_nbrs, int n,
 static int Reallocate_HBonds_List( reax_system *system, reax_list *hbonds,
                                    MPI_Comm comm )
 {
-  int i, id, total_hbonds;
+  int i, total_hbonds;
 
   int mincap = system->mincap;
   double saferzone = system->saferzone;
 
   total_hbonds = 0;
   for( i = 0; i < system->n; ++i )
-    if( (id = system->my_atoms[i].Hindex) >= 0 ) {
+    if ((system->my_atoms[i].Hindex) >= 0) {
       total_hbonds += system->my_atoms[i].num_hbonds;
     }
   total_hbonds = (int)(MAX( total_hbonds*saferzone, mincap*MIN_HBONDS ));
 
   Delete_List( hbonds, comm );
-  if( !Make_List( system->Hcap, total_hbonds, TYP_HBOND, hbonds, comm ) ) {
+  if (!Make_List( system->Hcap, total_hbonds, TYP_HBOND, hbonds, comm )) {
     fprintf( stderr, "not enough space for hbonds list. terminating!\n" );
     MPI_Abort( comm, INSUFFICIENT_MEMORY );
   }
@@ -334,11 +370,30 @@ static int Reallocate_Bonds_List( reax_system *system, reax_list *bonds,
   }
   *total_bonds = (int)(MAX( *total_bonds * safezone, mincap*MIN_BONDS ));
 
+#ifdef LMP_USER_OMP
+  if (system->omp_active)
+    for (i = 0; i < bonds->num_intrs; ++i)
+      sfree(bonds->select.bond_list[i].bo_data.CdboReduction, "CdboReduction");
+#endif
+
   Delete_List( bonds, comm );
   if(!Make_List(system->total_cap, *total_bonds, TYP_BOND, bonds, comm)) {
     fprintf( stderr, "not enough space for bonds list. terminating!\n" );
     MPI_Abort( comm, INSUFFICIENT_MEMORY );
   }
+
+#ifdef LMP_USER_OMP
+#if defined(_OPENMP)
+  int nthreads = omp_get_num_threads();
+#else
+  int nthreads = 1;
+#endif
+
+  if (system->omp_active)
+    for (i = 0; i < bonds->num_intrs; ++i)
+      bonds->select.bond_list[i].bo_data.CdboReduction =
+        (double*) smalloc(sizeof(double)*nthreads, "CdboReduction", comm);
+#endif
 
   return SUCCESS;
 }
@@ -374,10 +429,10 @@ void ReAllocate( reax_system *system, control_params *control,
     system->total_cap = MAX( (int)(system->N * safezone), mincap );
   }
 
-  if( Nflag ) {
+  if (Nflag) {
     /* system */
     ret = Allocate_System( system, system->local_cap, system->total_cap, msg );
-    if( ret != SUCCESS ) {
+    if (ret != SUCCESS) {
       fprintf( stderr, "not enough space for atom_list: total_cap=%d",
                system->total_cap );
       fprintf( stderr, "terminating...\n" );
@@ -388,7 +443,7 @@ void ReAllocate( reax_system *system, control_params *control,
     DeAllocate_Workspace( control, workspace );
     ret = Allocate_Workspace( system, control, workspace, system->local_cap,
                               system->total_cap, comm, msg );
-    if( ret != SUCCESS ) {
+    if (ret != SUCCESS) {
       fprintf( stderr, "no space for workspace: local_cap=%d total_cap=%d",
                system->local_cap, system->total_cap );
       fprintf( stderr, "terminating...\n" );
@@ -399,11 +454,11 @@ void ReAllocate( reax_system *system, control_params *control,
 
   renbr = (data->step - data->prev_steps) % control->reneighbor == 0;
   /* far neighbors */
-  if( renbr ) {
+  if (renbr) {
     far_nbrs = *lists + FAR_NBRS;
 
-    if( Nflag || realloc->num_far >= far_nbrs->num_intrs * DANGER_ZONE ) {
-      if( realloc->num_far > far_nbrs->num_intrs ) {
+    if (Nflag || realloc->num_far >= far_nbrs->num_intrs * DANGER_ZONE) {
+      if (realloc->num_far > far_nbrs->num_intrs) {
         fprintf( stderr, "step%d-ran out of space on far_nbrs: top=%d, max=%d",
                  data->step, realloc->num_far, far_nbrs->num_intrs );
         MPI_Abort( comm, INSUFFICIENT_MEMORY );
@@ -418,7 +473,7 @@ void ReAllocate( reax_system *system, control_params *control,
   }
 
   /* hydrogen bonds list */
-  if( control->hbond_cut > 0 ) {
+  if (control->hbond_cut > 0) {
     Hflag = 0;
     if( system->numH >= DANGER_ZONE * system->Hcap ||
         (0 && system->numH <= LOOSE_ZONE * system->Hcap) ) {
@@ -426,7 +481,7 @@ void ReAllocate( reax_system *system, control_params *control,
       system->Hcap = int(MAX( system->numH * saferzone, mincap ));
     }
 
-    if( Hflag || realloc->hbonds ) {
+    if (Hflag || realloc->hbonds) {
       ret = Reallocate_HBonds_List( system, (*lists)+HBONDS, comm );
       realloc->hbonds = 0;
     }
@@ -434,18 +489,18 @@ void ReAllocate( reax_system *system, control_params *control,
 
   /* bonds list */
   num_bonds = est_3body = -1;
-  if( Nflag || realloc->bonds ){
+  if (Nflag || realloc->bonds) {
     Reallocate_Bonds_List( system, (*lists)+BONDS, &num_bonds,
                            &est_3body, comm );
     realloc->bonds = 0;
-    realloc->num_3body = MAX( realloc->num_3body, est_3body );
+    realloc->num_3body = MAX( realloc->num_3body, est_3body ) * 2;
   }
 
   /* 3-body list */
-  if( realloc->num_3body > 0 ) {
+  if (realloc->num_3body > 0) {
     Delete_List( (*lists)+THREE_BODIES, comm );
 
-    if( num_bonds == -1 )
+    if (num_bonds == -1)
       num_bonds = ((*lists)+BONDS)->num_intrs;
 
     realloc->num_3body = (int)(MAX(realloc->num_3body*safezone, MIN_3BODIES));

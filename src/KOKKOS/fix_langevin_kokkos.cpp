@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
    ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
 #include "fix_langevin_kokkos.h"
 #include "atom_masks.h"
 #include "atom_kokkos.h"
@@ -21,7 +21,7 @@
 #include "update.h"
 #include "respa.h"
 #include "error.h"
-#include "memory.h"
+#include "memory_kokkos.h"
 #include "group.h"
 #include "random_mars.h"
 #include "compute.h"
@@ -44,13 +44,14 @@ template<class DeviceType>
 FixLangevinKokkos<DeviceType>::FixLangevinKokkos(LAMMPS *lmp, int narg, char **arg) :
   FixLangevin(lmp, narg, arg),rand_pool(seed + comm->me)
 {
+  kokkosable = 1;
   atomKK = (AtomKokkos *) atom;
   int ntypes = atomKK->ntypes;
 
   // allocate per-type arrays for force prefactors
-  memory->create_kokkos(k_gfactor1,gfactor1,ntypes+1,"langevin:gfactor1");
-  memory->create_kokkos(k_gfactor2,gfactor2,ntypes+1,"langevin:gfactor2");
-  memory->create_kokkos(k_ratio,ratio,ntypes+1,"langevin:ratio");
+  memoryKK->create_kokkos(k_gfactor1,gfactor1,ntypes+1,"langevin:gfactor1");
+  memoryKK->create_kokkos(k_gfactor2,gfactor2,ntypes+1,"langevin:gfactor2");
+  memoryKK->create_kokkos(k_ratio,ratio,ntypes+1,"langevin:ratio");
   d_gfactor1 = k_gfactor1.template view<DeviceType>();
   h_gfactor1 = k_gfactor1.template view<LMPHostType>();
   d_gfactor2 = k_gfactor2.template view<DeviceType>();
@@ -91,12 +92,12 @@ FixLangevinKokkos<DeviceType>::FixLangevinKokkos(LAMMPS *lmp, int narg, char **a
 template<class DeviceType>
 FixLangevinKokkos<DeviceType>::~FixLangevinKokkos()
 {
-  memory->destroy_kokkos(k_gfactor1,gfactor1);
-  memory->destroy_kokkos(k_gfactor2,gfactor2);
-  memory->destroy_kokkos(k_ratio,ratio);
-  memory->destroy_kokkos(k_flangevin,flangevin);
-  if(gjfflag) memory->destroy_kokkos(k_franprev,franprev);
-  memory->destroy_kokkos(k_tforce,tforce);
+  memoryKK->destroy_kokkos(k_gfactor1,gfactor1);
+  memoryKK->destroy_kokkos(k_gfactor2,gfactor2);
+  memoryKK->destroy_kokkos(k_ratio,ratio);
+  memoryKK->destroy_kokkos(k_flangevin,flangevin);
+  if(gjfflag) memoryKK->destroy_kokkos(k_franprev,franprev);
+  memoryKK->destroy_kokkos(k_tforce,tforce);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -120,7 +121,7 @@ void FixLangevinKokkos<DeviceType>::init()
 template<class DeviceType>
 void FixLangevinKokkos<DeviceType>::grow_arrays(int nmax)
 {
-  memory->grow_kokkos(k_franprev,franprev,nmax,3,"langevin:franprev");
+  memoryKK->grow_kokkos(k_franprev,franprev,nmax,3,"langevin:franprev");
   d_franprev = k_franprev.template view<DeviceType>();
   h_franprev = k_franprev.template view<LMPHostType>();
 }
@@ -132,7 +133,7 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
 {
   // sync the device views which might have been modified on host
   atomKK->sync(execution_space,datamask_read);
-  rmass = atomKK->rmass;
+  rmass = atomKK->k_rmass.view<DeviceType>();
   f = atomKK->k_f.template view<DeviceType>();
   v = atomKK->k_v.template view<DeviceType>();
   type = atomKK->k_type.template view<DeviceType>();
@@ -166,9 +167,9 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
   // reallocate flangevin if necessary
   if (tallyflag) {
     if (nlocal > maxatom1) {
-      memory->destroy_kokkos(k_flangevin,flangevin);
+      memoryKK->destroy_kokkos(k_flangevin,flangevin);
       maxatom1 = atomKK->nmax;
-      memory->create_kokkos(k_flangevin,flangevin,maxatom1,3,"langevin:flangevin");
+      memoryKK->create_kokkos(k_flangevin,flangevin,maxatom1,3,"langevin:flangevin");
       d_flangevin = k_flangevin.template view<DeviceType>();
       h_flangevin = k_flangevin.template view<LMPHostType>();
     }
@@ -176,11 +177,12 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
 
   // account for bias velocity
   if(tbiasflag == BIAS){
+    atomKK->sync(temperature->execution_space,temperature->datamask_read);
     temperature->compute_scalar();
     temperature->remove_bias_all(); // modifies velocities
     // if temeprature compute is kokkosized host-devcie comm won't be needed
-    atomKK->modified(Host,V_MASK);
-    atomKK->sync(execution_space,V_MASK);
+    atomKK->modified(temperature->execution_space,temperature->datamask_modify);
+    atomKK->sync(execution_space,temperature->datamask_modify);
   }
 
   // compute langevin force in parallel on the device
@@ -189,12 +191,11 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
     if (gjfflag)
       if (tallyflag)
         if (tbiasflag == BIAS)
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,1,1,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else{
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,1,1,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -202,18 +203,16 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,1,1,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,1,1,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
         else
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,1,0,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,1,0,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -221,19 +220,17 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,1,0,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else{
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,1,0,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
       else
         if (tbiasflag == BIAS)
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,0,1,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,0,1,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -241,18 +238,16 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,0,1,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,0,1,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
         else
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,0,0,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,0,0,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -260,20 +255,18 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,0,0,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,1,0,0,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
     else
       if (tallyflag)
         if (tbiasflag == BIAS)
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,1,1,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,1,1,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -281,18 +274,16 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,1,1,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,1,1,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
         else
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,1,0,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,1,0,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -300,19 +291,17 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,1,0,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,1,0,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
       else
         if (tbiasflag == BIAS)
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,0,1,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,0,1,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -320,18 +309,16 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,0,1,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,0,1,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
         else
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,0,0,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,0,0,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -339,8 +326,7 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,0,0,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,1,0,0,0,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -348,12 +334,11 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
     if (gjfflag)
       if (tallyflag)
         if (tbiasflag == BIAS)
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,1,1,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,1,1,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -361,18 +346,16 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,1,1,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,1,1,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
         else
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,1,0,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,1,0,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -380,19 +363,17 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,1,0,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,1,0,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
       else
         if (tbiasflag == BIAS)
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,0,1,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,0,1,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -400,18 +381,16 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,0,1,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,0,1,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
         else
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,0,0,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,0,0,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -419,20 +398,18 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,0,0,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,1,0,0,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
     else
       if (tallyflag)
         if (tbiasflag == BIAS)
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,1,1,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,1,1,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -440,18 +417,16 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,1,1,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,1,1,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
         else
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,1,0,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,1,0,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -459,19 +434,17 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,1,0,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,1,0,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
       else
         if (tbiasflag == BIAS)
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,0,1,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,0,1,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -479,18 +452,16 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,0,1,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,0,1,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
         else
-          if (rmass)
+          if (rmass.data())
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,0,0,1,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,0,0,1,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
@@ -498,17 +469,17 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
             if (zeroflag) {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,0,0,0,1> post_functor(this);
               Kokkos::parallel_reduce(nlocal,post_functor,s_fsum);
-            }
-            else {
+            } else {
               FixLangevinKokkosPostForceFunctor<DeviceType,0,0,0,0,0,0> post_functor(this);
               Kokkos::parallel_for(nlocal,post_functor);
             }
 
-  DeviceType::fence();
 
   if(tbiasflag == BIAS){
+    atomKK->sync(temperature->execution_space,temperature->datamask_read);
     temperature->restore_bias_all(); // modifies velocities
-    atomKK->modified(Host,V_MASK);
+    atomKK->modified(temperature->execution_space,temperature->datamask_modify);
+    atomKK->sync(execution_space,temperature->datamask_modify);
   }
 
   // set modify flags for the views modified in post_force functor
@@ -527,7 +498,6 @@ void FixLangevinKokkos<DeviceType>::post_force(int vflag)
     // set total force zero in parallel on the device
     FixLangevinKokkosZeroForceFunctor<DeviceType> zero_functor(this);
     Kokkos::parallel_for(nlocal,zero_functor);
-    DeviceType::fence();
   }
   // f is modified by both post_force and zero_force functors
   atomKK->modified(execution_space,datamask_modify);
@@ -576,7 +546,7 @@ FSUM FixLangevinKokkos<DeviceType>::post_force_item(int i) const
       if (v(i,0) == 0.0) fran[0] = 0.0;
       if (v(i,1) == 0.0) fran[1] = 0.0;
       if (v(i,2) == 0.0) fran[2] = 0.0;
-    }else{
+    } else {
       fdrag[0] = gamma1*v(i,0);
       fdrag[1] = gamma1*v(i,1);
       fdrag[2] = gamma1*v(i,2);
@@ -669,8 +639,8 @@ void FixLangevinKokkos<DeviceType>::compute_target()
     } else {
       if (atom->nmax > maxatom2) {
         maxatom2 = atom->nmax;
-        memory->destroy_kokkos(k_tforce,tforce);
-        memory->create_kokkos(k_tforce,tforce,maxatom2,"langevin:tforce");
+        memoryKK->destroy_kokkos(k_tforce,tforce);
+        memoryKK->create_kokkos(k_tforce,tforce,maxatom2,"langevin:tforce");
         d_tforce = k_tforce.template view<DeviceType>();
         h_tforce = k_tforce.template view<LMPHostType>();
       }
@@ -722,7 +692,6 @@ double FixLangevinKokkos<DeviceType>::compute_scalar()
     k_flangevin.template sync<DeviceType>();
     FixLangevinKokkosTallyEnergyFunctor<DeviceType> scalar_functor(this);
     Kokkos::parallel_reduce(nlocal,scalar_functor,energy_onestep);
-    DeviceType::fence();
     energy = 0.5*energy_onestep*update->dt;
   }
 
@@ -766,7 +735,6 @@ void FixLangevinKokkos<DeviceType>::end_of_step()
   k_flangevin.template sync<DeviceType>();
   FixLangevinKokkosTallyEnergyFunctor<DeviceType> tally_functor(this);
   Kokkos::parallel_reduce(nlocal,tally_functor,energy_onestep);
-  DeviceType::fence();
 
   energy += energy_onestep*update->dt;
 }

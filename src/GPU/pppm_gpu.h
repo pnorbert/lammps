@@ -26,7 +26,7 @@ namespace LAMMPS_NS {
 
 class PPPMGPU : public PPPM {
  public:
-  PPPMGPU(class LAMMPS *, int, char **);
+  PPPMGPU(class LAMMPS *);
   virtual ~PPPMGPU();
   void init();
   void setup();
@@ -35,13 +35,15 @@ class PPPMGPU : public PPPM {
   int timing_3d(int, double &);
   double memory_usage();
 
+  virtual void compute_group_group(int, int, int);
+
  protected:
   FFT_SCALAR ***density_brick_gpu, ***vd_brick;
   bool kspace_split, im_real_space;
   int old_nlocal;
   double poisson_time;
 
-  void brick2fft();
+  void brick2fft_gpu();
   virtual void poisson_ik();
 
   void pack_forward(int, FFT_SCALAR *, int, int *);
@@ -99,5 +101,13 @@ every 1 check yes".  Second, it may mean that an atom has moved far
 outside a processor's sub-domain or even the entire simulation box.
 This indicates bad physics, e.g. due to highly overlapping atoms, too
 large a timestep, etc.
+
+E: Cannot (yet) use K-space slab correction with compute group/group for triclinic systems
+
+UNDOCUMENTED
+
+E: Cannot (yet) use kspace_modify diff ad with compute group/group
+
+UNDOCUMENTED
 
 */

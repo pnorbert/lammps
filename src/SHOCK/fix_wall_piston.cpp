@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <string.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstring>
+#include <cstdlib>
 #include "fix_wall_piston.h"
 #include "atom.h"
 #include "modify.h"
@@ -33,7 +33,7 @@ using namespace MathConst;
 /* ---------------------------------------------------------------------- */
 
 FixWallPiston::FixWallPiston(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg), randomt(NULL), gfactor1(NULL), gfactor2(NULL)
 {
   force_reneighbor = 1;
   next_reneighbor = -1;
@@ -171,7 +171,7 @@ int FixWallPiston::setmask()
 
 /* ---------------------------------------------------------------------- */
 
-void FixWallPiston::initial_integrate(int vflag)
+void FixWallPiston::initial_integrate(int /*vflag*/)
 {
   next_reneighbor = update->ntimestep;
 }

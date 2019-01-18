@@ -16,8 +16,8 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "improper_umbrella.h"
 #include "atom.h"
 #include "comm.h"
@@ -189,17 +189,17 @@ void ImproperUmbrella::compute(int eflag, int vflag)
     dahy = ary-c*hry;
     dahz = arz-c*hrz;
 
-    f2[0] = (dhay*vb1z - dhaz*vb1y)*rar;
-    f2[1] = (dhaz*vb1x - dhax*vb1z)*rar;
-    f2[2] = (dhax*vb1y - dhay*vb1x)*rar;
+    f2[0] = (dhay*vb1z - dhaz*vb1y)*rar*a;
+    f2[1] = (dhaz*vb1x - dhax*vb1z)*rar*a;
+    f2[2] = (dhax*vb1y - dhay*vb1x)*rar*a;
 
-    f3[0] = (-dhay*vb2z + dhaz*vb2y)*rar;
-    f3[1] = (-dhaz*vb2x + dhax*vb2z)*rar;
-    f3[2] = (-dhax*vb2y + dhay*vb2x)*rar;
+    f3[0] = (-dhay*vb2z + dhaz*vb2y)*rar*a;
+    f3[1] = (-dhaz*vb2x + dhax*vb2z)*rar*a;
+    f3[2] = (-dhax*vb2y + dhay*vb2x)*rar*a;
 
-    f4[0] = dahx*rhr;
-    f4[1] = dahy*rhr;
-    f4[2] = dahz*rhr;
+    f4[0] = dahx*rhr*a;
+    f4[1] = dahy*rhr*a;
+    f4[2] = dahz*rhr*a;
 
     f1[0] = -(f2[0] + f3[0] + f4[0]);
     f1[1] = -(f2[1] + f3[1] + f4[1]);
@@ -208,32 +208,48 @@ void ImproperUmbrella::compute(int eflag, int vflag)
     // apply force to each of 4 atoms
 
     if (newton_bond || i1 < nlocal) {
-      f[i1][0] += f1[0]*a;
-      f[i1][1] += f1[1]*a;
-      f[i1][2] += f1[2]*a;
+      f[i1][0] += f1[0];
+      f[i1][1] += f1[1];
+      f[i1][2] += f1[2];
     }
 
     if (newton_bond || i2 < nlocal) {
-      f[i2][0] += f3[0]*a;
-      f[i2][1] += f3[1]*a;
-      f[i2][2] += f3[2]*a;
+      f[i2][0] += f3[0];
+      f[i2][1] += f3[1];
+      f[i2][2] += f3[2];
     }
 
     if (newton_bond || i3 < nlocal) {
-      f[i3][0] += f2[0]*a;
-      f[i3][1] += f2[1]*a;
-      f[i3][2] += f2[2]*a;
+      f[i3][0] += f2[0];
+      f[i3][1] += f2[1];
+      f[i3][2] += f2[2];
     }
 
     if (newton_bond || i4 < nlocal) {
-      f[i4][0] += f4[0]*a;
-      f[i4][1] += f4[1]*a;
-      f[i4][2] += f4[2]*a;
+      f[i4][0] += f4[0];
+      f[i4][1] += f4[1];
+      f[i4][2] += f4[2];
     }
 
-    if (evflag)
-      ev_tally(i1,i2,i3,i4,nlocal,newton_bond,eimproper,f1,f3,f4,
+    if (evflag) {
+
+      // get correct 4-body geometry for virial tally
+
+      vb1x = x[i1][0] - x[i2][0];
+      vb1y = x[i1][1] - x[i2][1];
+      vb1z = x[i1][2] - x[i2][2];
+
+      vb2x = x[i3][0] - x[i2][0];
+      vb2y = x[i3][1] - x[i2][1];
+      vb2z = x[i3][2] - x[i2][2];
+
+      vb3x = x[i4][0] - x[i3][0];
+      vb3y = x[i4][1] - x[i3][1];
+      vb3z = x[i4][2] - x[i3][2];
+
+      ev_tally(i1,i2,i3,i4,nlocal,newton_bond,eimproper,f1,f2,f4,
                vb1x,vb1y,vb1z,vb2x,vb2y,vb2z,vb3x,vb3y,vb3z);
+    }
   }
 }
 
@@ -262,7 +278,7 @@ void ImproperUmbrella::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->nimpropertypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->nimpropertypes,ilo,ihi);
 
   double k_one = force->numeric(FLERR,arg[1]);
   double w_one = force->numeric(FLERR,arg[2]);

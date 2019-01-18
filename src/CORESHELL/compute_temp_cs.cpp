@@ -17,9 +17,9 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
+#include <cstdlib>
+#include <cstring>
+#include <cmath>
 #include "compute_temp_cs.h"
 #include "atom.h"
 #include "atom_vec.h"
@@ -39,7 +39,7 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeTempCS::ComputeTempCS(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg), vint(NULL), id_fix(NULL), fix(NULL)
 {
   if (narg != 5) error->all(FLERR,"Illegal compute temp/cs command");
 

@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -56,7 +56,7 @@ possible bonds to break.  Every atom checks its list of possible bonds
 to break and labels the longest such bond as its "sole" bond to break.
 After this is done, if atom I is bonded to atom J in its sole bond,
 and atom J is bonded to atom I in its sole bond, then the I,J bond is
-"eligible" to be broken. 
+"eligible" to be broken.
 
 Note that these rules mean an atom will only be part of at most one
 broken bond on a given timestep.  It also means that if atom I chooses
@@ -79,8 +79,8 @@ part of bonds, angles, etc.
 
 NOTE: One data structure that is not updated when a bond breaks are
 the molecule IDs stored by each atom.  Even though one molecule
-becomes two moleclues due to the broken bond, all atoms in both new
-moleclues retain their original molecule IDs.
+becomes two molecules due to the broken bond, all atoms in both new
+molecules retain their original molecule IDs.
 
 Computationally, each timestep this fix operates, it loops over all
 the bonds in the system and computes distances between pairs of bonded
@@ -101,7 +101,7 @@ NOTE: Breaking a bond typically alters the energy of a system.  You
 should be careful not to choose bond breaking criteria that induce a
 dramatic change in energy.  For example, if you define a very stiff
 harmonic bond and break it when 2 atoms are separated by a distance
-far from the equilibribum bond length, then the 2 atoms will be
+far from the equilibrium bond length, then the 2 atoms will be
 dramatically released when the bond is broken.  More generally, you
 may need to thermostat your system to compensate for energy changes
 resulting from broken bonds (and angles, dihedrals, impropers).
@@ -112,17 +112,17 @@ resulting from broken bonds (and angles, dihedrals, impropers).
 
 No information about this fix is written to "binary restart
 files"_restart.html.  None of the "fix_modify"_fix_modify.html options
-are relevant to this fix. 
+are relevant to this fix.
 
 This fix computes two statistics which it stores in a global vector of
 length 2, which can be accessed by various "output
-commands"_Section_howto.html#howto_15.  The vector values calculated
-by this fix are "intensive".
+commands"_Howto_output.html.  The vector values calculated by this fix
+are "intensive".
 
 These are the 2 quantities:
 
 (1) # of bonds broken on the most recent breakage timestep
-(2) cummulative # of bonds broken :ul
+(2) cumulative # of bonds broken :ul
 
 No parameter of this fix can be used with the {start/stop} keywords of
 the "run"_run.html command.  This fix is not invoked during "energy
@@ -131,14 +131,14 @@ minimization"_minimize.html.
 [Restrictions:]
 
 This fix is part of the MC package.  It is only enabled if LAMMPS was
-built with that package.  See the "Making
-LAMMPS"_Section_start.html#start_3 section for more info.
+built with that package.  See the "Build package"_Build_package.html
+doc page for more info.
 
 [Related commands:]
 
 "fix bond/create"_fix_bond_create.html, "fix
-bond/swap"_fix_bond_swap.html, "dump local"_dump.html,
-"special_bonds"_special_bonds.html
+bond/react"_fix_bond_react.html, "fix bond/swap"_fix_bond_swap.html,
+"dump local"_dump.html, "special_bonds"_special_bonds.html
 
 [Default:]
 

@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -34,15 +34,15 @@ keyword = {region} or {constrain} or {com} or {hex} :l
 fix fnve all nve
 # specify regions rhot and rcold
 ...
-fix fhot all ehex 1 0.15 region rhot 
+fix fhot all ehex 1 0.15 region rhot
 fix fcold all ehex 1 -0.15 region rcold :pre
 
 # SPC/E water, from examples/in.ehex.spce
-fix fnve all nve    
+fix fnve all nve
 # specify regions rhot and rcold
 ...
 fix fhot all ehex 1 0.075 region rhot constrain com
-fix fcold all ehex 1 -0.075 region rcold constrain com 
+fix fcold all ehex 1 -0.075 region rcold constrain com
 fix frattle all rattle 1e-10 400 0 b 1 a 1 :pre
 
 [Description:]
@@ -80,9 +80,9 @@ position to the respective reservoir. The quantity
 \(F_\{\Gamma_\{k(\mathbf r_i)\}\}\) corresponds to the input parameter
 {F}, which is the energy flux into the reservoir. Furthermore,
 \(K_\{\Gamma_\{k(\mathbf r_i)\}\}\) and \(v_\{\Gamma_\{k(\mathbf r_i)\}\}\)
-denote the non-translational kinetic energy and the centre of mass
+denote the non-translational kinetic energy and the center of mass
 velocity of that reservoir. The thermostatting force does not affect
-the centre of mass velocities of the individual reservoirs and the
+the center of mass velocities of the individual reservoirs and the
 entire simulation box. A derivation of the equations and details on
 the numerical implementation with velocity Verlet in LAMMPS can be
 found in reference "(Wirnsberger)"#_Wirnsberger.
@@ -111,20 +111,20 @@ the keyword {hex} is specified.
 [Compatibility with SHAKE and RATTLE (rigid molecules)]:
 
 This fix is compatible with "fix shake"_fix_shake.html and "fix
-rattle"_fix_rattle.html. If either of these constraining algorithms is
+rattle"_fix_shake.html. If either of these constraining algorithms is
 specified in the input script and the keyword {constrain} is set, the
 bond distances will be corrected a second time at the end of the
 integration step.  It is recommended to specify the keyword {com} in
 addition to the keyword {constrain}. With this option all sites of a
-constrained cluster are rescaled, if its centre of mass is located
+constrained cluster are rescaled, if its center of mass is located
 inside the region. Rescaling all sites of a cluster by the same factor
 does not introduce any velocity components along fixed bonds. No
-rescaling takes place if the centre of mass lies outside the region.
+rescaling takes place if the center of mass lies outside the region.
 
 NOTE: You can only use the keyword {com} along with {constrain}.
 
 To achieve the highest accuracy it is recommended to use "fix
-rattle"_fix_rattle.html with the keywords {constrain} and {com} as
+rattle"_fix_shake.html with the keywords {constrain} and {com} as
 shown in the second example. Only if RATTLE is employed, the velocity
 constraints will be satisfied.
 
@@ -156,8 +156,8 @@ minimization"_minimize.html.
 [Restrictions:]
 
 This fix is part of the RIGID package.  It is only enabled if LAMMPS
-was built with that package.  See the "Making
-LAMMPS"_Section_start.html#start_3 section for more info.
+was built with that package.  See the "Build
+package"_Build_package.html doc page for more info.
 
 [Related commands:]
 

@@ -15,9 +15,9 @@
    Contributing author: Carsten Svaneborg (SDU)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "angle_zero.h"
 #include "atom.h"
 #include "force.h"
@@ -88,7 +88,7 @@ void AngleZero::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->nangletypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->nangletypes,ilo,ihi);
 
   double theta0_one = 0.0;
   if (coeffflag && (narg == 2))
@@ -148,7 +148,7 @@ void AngleZero::write_data(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double AngleZero::single(int type, int i1, int i2, int i3)
+double AngleZero::single(int /*type*/, int /*i1*/, int /*i2*/, int /*i3*/)
 {
   return 0.0;
 }

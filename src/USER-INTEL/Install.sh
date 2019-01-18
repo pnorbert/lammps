@@ -26,26 +26,31 @@ action () {
 # do not install child files if parent does not exist
 
 for file in *_intel.cpp; do
-  dep=`echo $file | sed 's/neigh_full_intel/neigh_full/g' | \
-      sed 's/_offload_intel//g' | sed 's/_intel//g'`
+  dep=`echo $file | sed -e 's/verlet_lrt_intel/pppm/g' \
+      -e 's/neigh_full_intel/neigh_full/g' \
+      -e 's/_offload_intel//g' -e 's/_intel//g'`
   action $file $dep
 done
 
 for file in *_intel.h; do
-  dep=`echo $file | sed 's/_offload_intel//g' | sed 's/_intel//g'`
+  dep=`echo $file | sed -e 's/verlet_lrt_intel/pppm/g' \
+      -e 's/_offload_intel//g' -e 's/_intel//g'`
   action $file $dep
 done
+
+# step 2: handle cases and tasks not handled in step 1.
 
 action intel_preprocess.h
 action intel_buffers.h
 action intel_buffers.cpp
 action math_extra_intel.h
-action intel_simd.h pair_sw_intel.cpp
+action nbin_intel.h
+action nbin_intel.cpp
+action npair_intel.h
+action npair_intel.cpp
+action intel_simd.h
 action intel_intrinsics.h pair_tersoff_intel.cpp
-action verlet_lrt_intel.h pppm.cpp
-action verlet_lrt_intel.cpp pppm.cpp
-
-# step 2: handle cases and tasks not handled in step 1.
+action intel_intrinsics_airebo.h pair_airebo_intel.cpp
 
 if (test $mode = 1) then
 
@@ -54,18 +59,10 @@ if (test $mode = 1) then
     sed -i -e 's|^PKG_INC =[ \t]*|&-DLMP_USER_INTEL |' ../Makefile.package
   fi
 
-  # force rebuild of files with LMP_USER_INTEL switch
-
-  touch ../accelerator_intel.h
-
 elif (test $mode = 0) then
 
   if (test -e ../Makefile.package) then
     sed -i -e 's/[^ \t]*INTEL[^ \t]* //' ../Makefile.package
   fi
-
-  # force rebuild of files with LMP_USER_INTEL switch
-
-  touch ../accelerator_intel.h
 
 fi

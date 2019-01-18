@@ -15,8 +15,8 @@
    Contributing author: Carsten Svaneborg, science@zqex.dk
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "angle_cosine_shift.h"
 #include "atom.h"
 #include "neighbor.h"
@@ -34,7 +34,10 @@ using namespace MathConst;
 
 /* ---------------------------------------------------------------------- */
 
-AngleCosineShift::AngleCosineShift(LAMMPS *lmp) : Angle(lmp) {}
+AngleCosineShift::AngleCosineShift(LAMMPS *lmp) : Angle(lmp)
+{
+  kcost = NULL;
+}
 
 /* ---------------------------------------------------------------------- */
 
@@ -172,7 +175,7 @@ void AngleCosineShift::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->nangletypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->nangletypes,ilo,ihi);
 
   double umin   = force->numeric(FLERR,arg[1]);
   double theta0 = force->numeric(FLERR,arg[2]);

@@ -17,8 +17,8 @@
      Reese Jones (Sandia)
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include <unistd.h>
 #include "fix_ave_correlate.h"
 #include "update.h"
@@ -44,7 +44,9 @@ enum{AUTO,UPPER,LOWER,AUTOUPPER,AUTOLOWER,FULL};
 /* ---------------------------------------------------------------------- */
 
 FixAveCorrelate::FixAveCorrelate(LAMMPS * lmp, int narg, char **arg):
-  Fix (lmp, narg, arg)
+  Fix (lmp, narg, arg),
+  nvalues(0), which(NULL), argindex(NULL), value2index(NULL), ids(NULL), fp(NULL),
+  count(NULL), values(NULL), corr(NULL), save_count(NULL), save_corr(NULL)
 {
   if (narg < 7) error->all(FLERR,"Illegal fix ave/correlate command");
 
@@ -59,11 +61,10 @@ FixAveCorrelate::FixAveCorrelate(LAMMPS * lmp, int narg, char **arg):
   // expand args if any have wildcard character "*"
 
   int expand = 0;
-  char **earg,**arghold;
+  char **earg;
   int nargnew = input->expand_args(narg-6,&arg[6],0,earg);
 
   if (earg != &arg[6]) expand = 1;
-  arghold = arg;
   arg = earg;
 
   // parse values until one isn't recognized
@@ -148,7 +149,7 @@ FixAveCorrelate::FixAveCorrelate(LAMMPS * lmp, int narg, char **arg):
         fp = fopen(arg[iarg+1],"w");
         if (fp == NULL) {
           char str[128];
-          sprintf(str,"Cannot open fix ave/correlate file %s",arg[iarg+1]);
+          snprintf(str,128,"Cannot open fix ave/correlate file %s",arg[iarg+1]);
           error->one(FLERR,str);
         }
       }
@@ -292,9 +293,8 @@ FixAveCorrelate::FixAveCorrelate(LAMMPS * lmp, int narg, char **arg):
   // wait to do this until after file comment lines are printed
 
   if (expand) {
-    for (int i = 0; i < nvalues; i++) delete [] earg[i];
+    for (int i = 0; i < nargnew; i++) delete [] earg[i];
     memory->sfree(earg);
-    arg = arghold;
   }
 
   // allocate and initialize memory for averaging
@@ -404,7 +404,7 @@ void FixAveCorrelate::init()
    only does something if nvalid = current timestep
 ------------------------------------------------------------------------- */
 
-void FixAveCorrelate::setup(int vflag)
+void FixAveCorrelate::setup(int /*vflag*/)
 {
   end_of_step();
 }

@@ -15,15 +15,16 @@
    Contributing authors: Leo Silbert (SNL), Gary Grest (SNL)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
 #include "pair_gran_hertz_history.h"
 #include "atom.h"
 #include "update.h"
 #include "force.h"
 #include "fix.h"
+#include "fix_neigh_history.h"
 #include "neighbor.h"
 #include "neigh_list.h"
 #include "comm.h"
@@ -95,8 +96,8 @@ void PairGranHertzHistory::compute(int eflag, int vflag)
   ilist = list->ilist;
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
-  firsttouch = list->listgranhistory->firstneigh;
-  firstshear = list->listgranhistory->firstdouble;
+  firsttouch = fix_history->firstflag;
+  firstshear = fix_history->firstvalue;
 
   // loop over neighbors of my atoms
 
@@ -305,9 +306,9 @@ void PairGranHertzHistory::settings(int narg, char **arg)
 
 /* ---------------------------------------------------------------------- */
 
-double PairGranHertzHistory::single(int i, int j, int itype, int jtype,
+double PairGranHertzHistory::single(int i, int j, int /*itype*/, int /*jtype*/,
                                     double rsq,
-                                    double factor_coul, double factor_lj,
+                                    double /*factor_coul*/, double /*factor_lj*/,
                                     double &fforce)
 {
   double radi,radj,radsum;
@@ -407,7 +408,7 @@ double PairGranHertzHistory::single(int i, int j, int itype, int jtype,
 
   int jnum = list->numneigh[i];
   int *jlist = list->firstneigh[i];
-  double *allshear = list->listgranhistory->firstdouble[i];
+  double *allshear = fix_history->firstvalue[i];
 
   for (int jj = 0; jj < jnum; jj++) {
     neighprev++;

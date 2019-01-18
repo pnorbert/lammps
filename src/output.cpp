@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "output.h"
 #include "style_dump.h"
 #include "atom.h"
@@ -49,18 +49,18 @@ Output::Output(LAMMPS *lmp) : Pointers(lmp)
   newarg[0] = (char *) "thermo_temp";
   newarg[1] = (char *) "all";
   newarg[2] = (char *) "temp";
-  modify->add_compute(3,newarg,1);
+  modify->add_compute(3,newarg);
 
   newarg[0] = (char *) "thermo_press";
   newarg[1] = (char *) "all";
   newarg[2] = (char *) "pressure";
   newarg[3] = (char *) "thermo_temp";
-  modify->add_compute(4,newarg,1);
+  modify->add_compute(4,newarg);
 
   newarg[0] = (char *) "thermo_pe";
   newarg[1] = (char *) "all";
   newarg[2] = (char *) "pe";
-  modify->add_compute(3,newarg,1);
+  modify->add_compute(3,newarg);
 
   delete [] newarg;
 
@@ -89,6 +89,15 @@ Output::Output(LAMMPS *lmp) : Pointers(lmp)
   restart1 = restart2a = restart2b = NULL;
   var_restart_single = var_restart_double = NULL;
   restart = NULL;
+
+  dump_map = new DumpCreatorMap();
+
+#define DUMP_CLASS
+#define DumpStyle(key,Class) \
+  (*dump_map)[#key] = &dump_creator<Class>;
+#include "style_dump.h"
+#undef DumpStyle
+#undef DUMP_CLASS
 }
 
 /* ----------------------------------------------------------------------
@@ -115,6 +124,8 @@ Output::~Output()
   delete [] var_restart_single;
   delete [] var_restart_double;
   delete restart;
+
+  delete dump_map;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -571,14 +582,10 @@ void Output::add_dump(int narg, char **arg)
 
   // create the Dump
 
-  if (0) return;         // dummy line to enable else-if macro expansion
-
-#define DUMP_CLASS
-#define DumpStyle(key,Class) \
-  else if (strcmp(arg[2],#key) == 0) dump[ndump] = new Class(lmp,narg,arg);
-#include "style_dump.h"
-#undef DUMP_CLASS
-
+  if (dump_map->find(arg[2]) != dump_map->end()) {
+    DumpCreator dump_creator = (*dump_map)[arg[2]];
+    dump[ndump] = dump_creator(lmp, narg, arg);
+  }
   else error->all(FLERR,"Unknown dump style");
 
   every_dump[ndump] = force->inumeric(FLERR,arg[3]);
@@ -586,6 +593,16 @@ void Output::add_dump(int narg, char **arg)
   last_dump[ndump] = -1;
   var_dump[ndump] = NULL;
   ndump++;
+}
+
+/* ----------------------------------------------------------------------
+   one instance per dump style in style_dump.h
+------------------------------------------------------------------------- */
+
+template <typename T>
+Dump *Output::dump_creator(LAMMPS *lmp, int narg, char ** arg)
+{
+  return new T(lmp, narg, arg);
 }
 
 /* ----------------------------------------------------------------------
@@ -633,6 +650,21 @@ void Output::delete_dump(char *id)
     ivar_dump[i-1] = ivar_dump[i];
   }
   ndump--;
+}
+
+/* ----------------------------------------------------------------------
+   find a dump by ID
+   return index of dump or -1 if not found
+------------------------------------------------------------------------- */
+
+int Output::find_dump(const char *id)
+{
+  if (id == NULL) return -1;
+  int idump;
+  for (idump = 0; idump < ndump; idump++)
+    if (strcmp(id,dump[idump]->id) == 0) break;
+  if (idump == ndump) return -1;
+  return idump;
 }
 
 /* ----------------------------------------------------------------------
@@ -732,6 +764,7 @@ void Output::create_restart(int narg, char **arg)
     } else restart_every_single = every;
 
     int n = strlen(arg[1]) + 3;
+    delete [] restart1;
     restart1 = new char[n];
     strcpy(restart1,arg[1]);
     if (strchr(restart1,'*') == NULL) strcat(restart1,".*");
@@ -748,6 +781,8 @@ void Output::create_restart(int narg, char **arg)
       restart_every_double = 0;
     } else restart_every_double = every;
 
+    delete [] restart2a;
+    delete [] restart2b;
     restart_toggle = 0;
     int n = strlen(arg[1]) + 3;
     restart2a = new char[n];
@@ -805,11 +840,18 @@ void Output::memory_usage()
   for (int i = 0; i < ndump; i++) bytes += dump[i]->memory_usage();
 
   double mbytes = bytes/1024.0/1024.0;
+  double mbavg,mbmin,mbmax;
+  MPI_Reduce(&mbytes,&mbavg,1,MPI_DOUBLE,MPI_SUM,0,world);
+  MPI_Reduce(&mbytes,&mbmin,1,MPI_DOUBLE,MPI_MIN,0,world);
+  MPI_Reduce(&mbytes,&mbmax,1,MPI_DOUBLE,MPI_MAX,0,world);
 
   if (comm->me == 0) {
+    mbavg /= comm->nprocs;
     if (screen)
-      fprintf(screen,"Memory usage per processor = %g Mbytes\n",mbytes);
+      fprintf(screen,"Per MPI rank memory allocation (min/avg/max) = "
+              "%.4g | %.4g | %.4g Mbytes\n",mbmin,mbavg,mbmax);
     if (logfile)
-      fprintf(logfile,"Memory usage per processor = %g Mbytes\n",mbytes);
+      fprintf(logfile,"Per MPI rank memory allocation (min/avg/max) = "
+              "%.4g | %.4g | %.4g Mbytes\n",mbmin,mbavg,mbmax);
   }
 }

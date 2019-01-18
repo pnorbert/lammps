@@ -31,7 +31,10 @@ class ComputeCoordAtom : public Compute {
   void init();
   void init_list(int, class NeighList *);
   void compute_peratom();
+  int pack_forward_comm(int, int *, double *, int, int *);
+  void unpack_forward_comm(int, int, double *);
   double memory_usage();
+  enum {NONE,CUTOFF,ORIENT};
 
  private:
   int nmax,ncol;
@@ -41,6 +44,12 @@ class ComputeCoordAtom : public Compute {
   int *typelo,*typehi;
   double *cvec;
   double **carray;
+
+  class ComputeOrientOrderAtom *c_orientorder;
+  char *id_orientorder;
+  double threshold;
+  double **normv;
+  int cstyle,nqlist,l;
 };
 
 }
@@ -56,9 +65,29 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
+E: Could not find compute coord/atom compute ID
+
+UNDOCUMENTED
+
+E: Compute coord/atom compute ID is not orientorder/atom
+
+UNDOCUMENTED
+
+E: Compute coord/atom threshold not between -1 and 1
+
+UNDOCUMENTED
+
+E: Invalid cstyle in compute coord/atom
+
+UNDOCUMENTED
+
+E: Compute coord/atom requires components option in compute orientorder/atom
+
+UNDOCUMENTED
+
 E: Compute coord/atom requires a pair style be defined
 
-Self-explantory.
+Self-explanatory.
 
 E: Compute coord/atom cutoff is longer than pairwise cutoff
 

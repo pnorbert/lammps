@@ -17,9 +17,9 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "fix_tmd.h"
 #include "atom.h"
 #include "update.h"
@@ -39,7 +39,8 @@ using namespace FixConst;
 
 /* ---------------------------------------------------------------------- */
 
-FixTMD::FixTMD(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
+FixTMD::FixTMD(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg),
+nfileevery(0), fp(NULL), xf(NULL), xold(NULL)
 {
   if (narg < 6) error->all(FLERR,"Illegal fix tmd command");
 
@@ -54,8 +55,6 @@ FixTMD::FixTMD(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
   // perform initial allocation of atom-based arrays
   // register with Atom class
 
-  xf = NULL;
-  xold = NULL;
   grow_arrays(atom->nmax);
   atom->add_callback(0);
 
@@ -76,7 +75,7 @@ FixTMD::FixTMD(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
       fp = fopen(arg[6],"w");
       if (fp == NULL) {
         char str[128];
-        sprintf(str,"Cannot open fix tmd file %s",arg[6]);
+        snprintf(str,128,"Cannot open fix tmd file %s",arg[6]);
         error->one(FLERR,str);
       }
       fprintf(fp,"%s %s\n","# Step rho_target rho_old gamma_back",
@@ -171,7 +170,7 @@ void FixTMD::init()
 
 /* ---------------------------------------------------------------------- */
 
-void FixTMD::initial_integrate(int vflag)
+void FixTMD::initial_integrate(int /*vflag*/)
 {
   double a,b,c,d,e;
   double dx,dy,dz,dxkt,dykt,dzkt;
@@ -336,7 +335,7 @@ void FixTMD::grow_arrays(int nmax)
    copy values within local atom-based arrays
 ------------------------------------------------------------------------- */
 
-void FixTMD::copy_arrays(int i, int j, int delflag)
+void FixTMD::copy_arrays(int i, int j, int /*delflag*/)
 {
   xf[j][0] = xf[i][0];
   xf[j][1] = xf[i][1];
@@ -392,7 +391,7 @@ void FixTMD::readfile(char *file)
 
   char *buffer = new char[CHUNK*MAXLINE];
   char *next,*bufptr;
-  int i,m,nlines,imageflag,ix,iy,iz;
+  int i,m,n,nlines,imageflag,ix,iy,iz;
   tagint itag;
   double x,y,z,xprd,yprd,zprd;
 
@@ -401,7 +400,7 @@ void FixTMD::readfile(char *file)
   char *eof = NULL;
   xprd = yprd = zprd = -1.0;
 
-  while (!eof) {
+  do {
     if (me == 0) {
       m = 0;
       for (nlines = 0; nlines < CHUNK; nlines++) {
@@ -413,7 +412,7 @@ void FixTMD::readfile(char *file)
       m++;
     }
 
-    MPI_Bcast(&eof,1,MPI_INT,0,world);
+    MPI_Bcast(&eof,sizeof(char *),MPI_CHAR,0,world);
     MPI_Bcast(&nlines,1,MPI_INT,0,world);
     MPI_Bcast(&m,1,MPI_INT,0,world);
     MPI_Bcast(buffer,m,MPI_CHAR,0,world);
@@ -456,10 +455,17 @@ void FixTMD::readfile(char *file)
       }
 
       if (imageflag)
-        sscanf(bufptr,TAGINT_FORMAT " %lg %lg %lg %d %d %d",
-               &itag,&x,&y,&z,&ix,&iy,&iz);
+        n = sscanf(bufptr,TAGINT_FORMAT " %lg %lg %lg %d %d %d",
+                   &itag,&x,&y,&z,&ix,&iy,&iz);
       else
-        sscanf(bufptr,TAGINT_FORMAT " %lg %lg %lg",&itag,&x,&y,&z);
+        n = sscanf(bufptr,TAGINT_FORMAT " %lg %lg %lg",&itag,&x,&y,&z);
+
+      if (n < 0) {
+        if (me == 0) error->warning(FLERR,"Ignoring empty or incorrectly"
+                                    " formatted line in target file");
+        bufptr = next + 1;
+        continue;
+      }
 
       m = atom->map(itag);
       if (m >= 0 && m < nlocal && mask[m] & groupbit) {
@@ -474,10 +480,9 @@ void FixTMD::readfile(char *file)
         }
         ncount++;
       }
-
       bufptr = next + 1;
     }
-  }
+  } while (eof != NULL);
 
   // clean up
 
@@ -518,7 +523,7 @@ void FixTMD::open(char *file)
   else {
 #ifdef LAMMPS_GZIP
     char gunzip[128];
-    sprintf(gunzip,"gzip -c -d %s",file);
+    snprintf(gunzip,128,"gzip -c -d %s",file);
 
 #ifdef _WIN32
     fp = _popen(gunzip,"rb");
@@ -533,7 +538,7 @@ void FixTMD::open(char *file)
 
   if (fp == NULL) {
     char str[128];
-    sprintf(str,"Cannot open file %s",file);
+    snprintf(str,128,"Cannot open file %s",file);
     error->one(FLERR,str);
   }
 }

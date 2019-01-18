@@ -14,7 +14,7 @@
 #ifndef LMP_MODIFY_H
 #define LMP_MODIFY_H
 
-#include <stdio.h>
+#include <cstdio>
 #include "pointers.h"
 #include <map>
 #include <string>
@@ -29,13 +29,14 @@ class Modify : protected Pointers {
 
  public:
   int nfix,maxfix;
-  int n_initial_integrate,n_post_integrate,n_pre_exchange,n_pre_neighbor;
+  int n_initial_integrate,n_post_integrate,n_pre_exchange;
+  int n_pre_neighbor,n_post_neighbor;
   int n_pre_force,n_pre_reverse,n_post_force;
   int n_final_integrate,n_end_of_step,n_thermo_energy,n_thermo_energy_atom;
   int n_initial_integrate_respa,n_post_integrate_respa;
   int n_pre_force_respa,n_post_force_respa,n_final_integrate_respa;
-  int n_min_pre_exchange,n_min_pre_neighbor;
-  int n_min_pre_force,n_min_post_force,n_min_energy;
+  int n_min_pre_exchange,n_min_pre_neighbor,n_min_post_neighbor;
+  int n_min_pre_force,n_min_pre_reverse,n_min_post_force,n_min_energy;
 
   int restart_pbc_any;       // 1 if any fix sets restart_pbc
   int nfix_restart_global;   // stored fix global info from restart file
@@ -53,11 +54,14 @@ class Modify : protected Pointers {
   virtual void setup(int);
   virtual void setup_pre_exchange();
   virtual void setup_pre_neighbor();
+  virtual void setup_post_neighbor();
   virtual void setup_pre_force(int);
+  virtual void setup_pre_reverse(int, int);
   virtual void initial_integrate(int);
   virtual void post_integrate();
   virtual void pre_exchange();
   virtual void pre_neighbor();
+  virtual void post_neighbor();
   virtual void pre_force(int);
   virtual void pre_reverse(int,int);
   virtual void post_force(int);
@@ -77,7 +81,9 @@ class Modify : protected Pointers {
 
   virtual void min_pre_exchange();
   virtual void min_pre_neighbor();
+  virtual void min_post_neighbor();
   virtual void min_pre_force(int);
+  virtual void min_pre_reverse(int,int);
   virtual void min_post_force(int);
 
   virtual double min_energy(double *);
@@ -90,13 +96,18 @@ class Modify : protected Pointers {
   virtual int min_dof();
   virtual int min_reset_ref();
 
-  void add_fix(int, char **, int trysuffix=0);
+  void add_fix(int, char **, int trysuffix=1);
   void modify_fix(int, char **);
   void delete_fix(const char *);
+  void delete_fix(int);
   int find_fix(const char *);
+  int find_fix_by_style(const char *);
   int check_package(const char *);
+  int check_rigid_group_overlap(int);
+  int check_rigid_region_overlap(int, class Region *);
+  int check_rigid_list_overlap(int *);
 
-  void add_compute(int, char **, int trysuffix=0);
+  void add_compute(int, char **, int trysuffix=1);
   void modify_compute(int, char **);
   void delete_compute(const char *);
   int find_compute(const char *);
@@ -107,7 +118,7 @@ class Modify : protected Pointers {
 
   void write_restart(FILE *);
   int read_restart(FILE *);
-  void restart_deallocate();
+  void restart_deallocate(int);
 
   bigint memory_usage();
 
@@ -116,15 +127,15 @@ class Modify : protected Pointers {
   // lists of fixes to apply at different stages of timestep
 
   int *list_initial_integrate,*list_post_integrate;
-  int *list_pre_exchange,*list_pre_neighbor;
+  int *list_pre_exchange,*list_pre_neighbor,*list_post_neighbor;
   int *list_pre_force,*list_pre_reverse,*list_post_force;
   int *list_final_integrate,*list_end_of_step,*list_thermo_energy;
   int *list_thermo_energy_atom;
   int *list_initial_integrate_respa,*list_post_integrate_respa;
   int *list_pre_force_respa,*list_post_force_respa;
   int *list_final_integrate_respa;
-  int *list_min_pre_exchange,*list_min_pre_neighbor;
-  int *list_min_pre_force,*list_min_post_force;
+  int *list_min_pre_exchange,*list_min_pre_neighbor,*list_min_post_neighbor;
+  int *list_min_pre_force,*list_min_pre_reverse,*list_min_post_force;
   int *list_min_energy;
 
   int *end_of_step_every;
@@ -135,10 +146,12 @@ class Modify : protected Pointers {
   char **id_restart_global;           // stored fix global info
   char **style_restart_global;        // from read-in restart file
   char **state_restart_global;
+  int *used_restart_global;
 
   char **id_restart_peratom;          // stored fix peratom info
   char **style_restart_peratom;       // from read-in restart file
   int *index_restart_peratom;
+  int *used_restart_peratom;
 
   int index_permanent;        // fix/compute index returned to library call
 
@@ -149,13 +162,16 @@ class Modify : protected Pointers {
   void list_init_dofflag(int &, int *&);
   void list_init_compute();
 
- protected:
+ public:
   typedef Compute *(*ComputeCreator)(LAMMPS *, int, char **);
-  std::map<std::string,ComputeCreator> *compute_map;
+  typedef std::map<std::string,ComputeCreator> ComputeCreatorMap;
+  ComputeCreatorMap *compute_map;
 
   typedef Fix *(*FixCreator)(LAMMPS *, int, char **);
-  std::map<std::string,FixCreator> *fix_map;
+  typedef std::map<std::string,FixCreator> FixCreatorMap;
+  FixCreatorMap *fix_map;
 
+ protected:
   template <typename T> static Compute *compute_creator(LAMMPS *, int, char **);
   template <typename T> static Fix *fix_creator(LAMMPS *, int, char **);
 };
@@ -208,9 +224,9 @@ The ID and style of a fix match for a fix you are changing with a fix
 command, but the new group you are specifying does not match the old
 group.
 
-E: Unknown fix style
+E: Unknown fix style %s
 
-The choice of fix style is unknown.
+UNDOCUMENTED
 
 E: Could not find fix_modify ID
 
@@ -224,9 +240,9 @@ E: Reuse of compute ID
 
 A compute ID cannot be used twice.
 
-E: Unknown compute style
+E: Unknown compute style %s
 
-The choice of compute style is unknown.
+UNDOCUMENTED
 
 E: Could not find compute_modify ID
 
@@ -235,5 +251,13 @@ Self-explanatory.
 E: Could not find compute ID to delete
 
 Self-explanatory.
+
+U: Unknown fix style
+
+The choice of fix style is unknown.
+
+U: Unknown compute style
+
+The choice of compute style is unknown.
 
 */

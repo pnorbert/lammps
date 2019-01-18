@@ -24,7 +24,7 @@
   <http://www.gnu.org/licenses/>.
   ----------------------------------------------------------------------*/
 
-#include "pair_reax_c.h"
+#include "pair_reaxc.h"
 #include "reaxc_multi_body.h"
 #include "reaxc_bond_orders.h"
 #include "reaxc_list.h"
@@ -32,7 +32,7 @@
 
 void Atom_Energy( reax_system *system, control_params *control,
                   simulation_data *data, storage *workspace, reax_list **lists,
-                  output_controls *out_control )
+                  output_controls * /*out_control*/ )
 {
   int i, j, pj, type_i, type_j;
   double Delta_lpcorr, dfvl;
@@ -79,7 +79,7 @@ void Atom_Energy( reax_system *system, control_params *control,
       numbonds ++;
 
     /* calculate the energy */
-    if (numbonds > 0)
+    if (numbonds > 0 || control->enobondsflag)
       data->my_en.e_lp += e_lp =
         p_lp2 * workspace->Delta_lp[i] * inv_expvd2;
 
@@ -87,26 +87,27 @@ void Atom_Energy( reax_system *system, control_params *control,
       75 * p_lp2 * workspace->Delta_lp[i] * expvd2 * SQR(inv_expvd2);
     CElp = dElp * workspace->dDelta_lp[i];
 
-    if (numbonds > 0) workspace->CdDelta[i] += CElp;  // lp - 1st term
+    if (numbonds > 0 || control->enobondsflag)
+      workspace->CdDelta[i] += CElp;  // lp - 1st term
 
     /* tally into per-atom energy */
-    if( system->pair_ptr->evflag)
+    if (system->pair_ptr->evflag)
       system->pair_ptr->ev_tally(i,i,system->n,1,e_lp,0.0,0.0,0.0,0.0,0.0);
 
     /* correction for C2 */
-    if( p_lp3 > 0.001 && !strcmp(system->reax_param.sbp[type_i].name, "C") )
+    if (p_lp3 > 0.001 && !strcmp(system->reax_param.sbp[type_i].name, "C"))
       for( pj = Start_Index(i, bonds); pj < End_Index(i, bonds); ++pj ) {
         j = bonds->select.bond_list[pj].nbr;
         type_j = system->my_atoms[j].type;
-	if (type_j < 0) continue;
+        if (type_j < 0) continue;
 
-        if( !strcmp( system->reax_param.sbp[type_j].name, "C" ) ) {
+        if (!strcmp( system->reax_param.sbp[type_j].name, "C" )) {
           twbp = &( system->reax_param.tbp[type_i][type_j]);
           bo_ij = &( bonds->select.bond_list[pj].bo_data );
           Di = workspace->Delta[i];
           vov3 = bo_ij->BO - Di - 0.040*pow(Di, 4.);
 
-          if( vov3 > 3. ) {
+          if (vov3 > 3.) {
             data->my_en.e_lp += e_lph = p_lp3 * SQR(vov3-3.0);
 
             deahu2dbo = 2.*p_lp3*(vov3 - 3.);
@@ -116,7 +117,7 @@ void Atom_Energy( reax_system *system, control_params *control,
             workspace->CdDelta[i] += deahu2dsbo;
 
             /* tally into per-atom energy */
-            if( system->pair_ptr->evflag)
+            if (system->pair_ptr->evflag)
               system->pair_ptr->ev_tally(i,j,system->n,1,e_lph,0.0,0.0,0.0,0.0,0.0);
 
           }
@@ -131,7 +132,7 @@ void Atom_Energy( reax_system *system, control_params *control,
     sbp_i = &(system->reax_param.sbp[ type_i ]);
 
     /* over-coordination energy */
-    if( sbp_i->mass > 21.0 )
+    if (sbp_i->mass > 21.0)
       dfvl = 0.0;
     else dfvl = 1.0; // only for 1st-row elements
 
@@ -140,7 +141,7 @@ void Atom_Energy( reax_system *system, control_params *control,
     for( pj = Start_Index(i, bonds); pj < End_Index(i, bonds); ++pj ) {
         j = bonds->select.bond_list[pj].nbr;
         type_j = system->my_atoms[j].type;
-	if (type_j < 0) continue;
+        if (type_j < 0) continue;
         bo_ij = &(bonds->select.bond_list[pj].bo_data);
         twbp = &(system->reax_param.tbp[ type_i ][ type_j ]);
 
@@ -187,7 +188,7 @@ void Atom_Energy( reax_system *system, control_params *control,
     for( pj = Start_Index(i, bonds); pj < End_Index(i, bonds); ++pj )
       numbonds ++;
 
-    if (numbonds > 0)
+    if (numbonds > 0 || control->enobondsflag)
       data->my_en.e_un += e_un =
         -p_ovun5 * (1.0 - exp_ovun6) * inv_exp_ovun2n * inv_exp_ovun8;
 
@@ -200,15 +201,17 @@ void Atom_Energy( reax_system *system, control_params *control,
       p_ovun4 * exp_ovun1 * SQR(inv_exp_ovun1) + CEunder2;
 
     /* tally into per-atom energy */
-    if( system->pair_ptr->evflag) {
+    if (system->pair_ptr->evflag) {
       eng_tmp = e_ov;
-      if (numbonds > 0) eng_tmp += e_un;
+      if (numbonds > 0 || control->enobondsflag)
+        eng_tmp += e_un;
       system->pair_ptr->ev_tally(i,i,system->n,1,eng_tmp,0.0,0.0,0.0,0.0,0.0);
     }
 
     /* forces */
     workspace->CdDelta[i] += CEover3;   // OvCoor - 2nd term
-    if (numbonds > 0) workspace->CdDelta[i] += CEunder3;  // UnCoor - 1st term
+    if (numbonds > 0 || control->enobondsflag)
+      workspace->CdDelta[i] += CEunder3;  // UnCoor - 1st term
 
     for( pj = Start_Index(i, bonds); pj < End_Index(i, bonds); ++pj ) {
       pbond = &(bonds->select.bond_list[pj]);

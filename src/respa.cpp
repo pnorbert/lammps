@@ -15,8 +15,8 @@
    Contributing authors: Mark Stevens (SNL), Paul Crozier (SNL)
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "respa.h"
 #include "neighbor.h"
 #include "atom.h"
@@ -44,8 +44,12 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-Respa::Respa(LAMMPS *lmp, int narg, char **arg) : Integrate(lmp, narg, arg)
+Respa::Respa(LAMMPS *lmp, int narg, char **arg) :
+  Integrate(lmp, narg, arg),
+  step(NULL), loop(NULL), hybrid_level(NULL), hybrid_compute(NULL),
+  newton(NULL), fix_respa(NULL)
 {
+  nhybrid_styles = 0;
   if (narg < 1) error->all(FLERR,"Illegal run_style respa command");
 
   nlevels = force->inumeric(FLERR,arg[0]);
@@ -394,24 +398,27 @@ void Respa::init()
    setup before run
 ------------------------------------------------------------------------- */
 
-void Respa::setup()
+void Respa::setup(int flag)
 {
   if (comm->me == 0 && screen) {
     fprintf(screen,"Setting up r-RESPA run ...\n");
-    fprintf(screen,"  Unit style    : %s\n", update->unit_style);
-    fprintf(screen,"  Current step  : " BIGINT_FORMAT "\n", update->ntimestep);
-    fprintf(screen,"  Time steps    :");
-    for (int ilevel=0; ilevel < nlevels; ++ilevel)
-      fprintf(screen," %d:%g",ilevel+1, step[ilevel]);
-    fprintf(screen,"\n  r-RESPA fixes :");
-    for (int l=0; l < modify->n_post_force_respa; ++l) {
-      Fix *f = modify->fix[modify->list_post_force_respa[l]];
-      if (f->respa_level >= 0)
-        fprintf(screen," %d:%s[%s]",
-                MIN(f->respa_level+1,nlevels),f->style,f->id);
+    if (flag) {
+      fprintf(screen,"  Unit style    : %s\n", update->unit_style);
+      fprintf(screen,"  Current step  : " BIGINT_FORMAT "\n",
+              update->ntimestep);
+      fprintf(screen,"  Time steps    :");
+      for (int ilevel=0; ilevel < nlevels; ++ilevel)
+        fprintf(screen," %d:%g",ilevel+1, step[ilevel]);
+      fprintf(screen,"\n  r-RESPA fixes :");
+      for (int l=0; l < modify->n_post_force_respa; ++l) {
+        Fix *f = modify->fix[modify->list_post_force_respa[l]];
+        if (f->respa_level >= 0)
+          fprintf(screen," %d:%s[%s]",
+                  MIN(f->respa_level+1,nlevels),f->style,f->id);
+      }
+      fprintf(screen,"\n");
+      timer->print_timeout(screen);
     }
-    fprintf(screen,"\n");
-    timer->print_timeout(screen);
   }
 
   update->setupflag = 1;
@@ -434,7 +441,8 @@ void Respa::setup()
   domain->image_check();
   domain->box_too_small_check();
   modify->setup_pre_neighbor();
-  neighbor->build();
+  neighbor->build(1);
+  modify->setup_post_neighbor();
   neighbor->ncalls = 0;
 
   // compute all forces
@@ -471,14 +479,14 @@ void Respa::setup()
       if (kspace_compute_flag) force->kspace->compute(eflag,vflag);
     }
 
-    modify->pre_reverse(eflag,vflag);
+    modify->setup_pre_reverse(eflag,vflag);
     if (newton[ilevel]) comm->reverse_comm();
     copy_f_flevel(ilevel);
   }
 
   sum_flevel_f();
   modify->setup(vflag);
-  output->setup();
+  output->setup(flag);
   update->setupflag = 0;
 }
 
@@ -509,7 +517,8 @@ void Respa::setup_minimal(int flag)
     domain->image_check();
     domain->box_too_small_check();
     modify->setup_pre_neighbor();
-    neighbor->build();
+    neighbor->build(1);
+    modify->setup_post_neighbor();
     neighbor->ncalls = 0;
   }
 
@@ -547,7 +556,7 @@ void Respa::setup_minimal(int flag)
       if (kspace_compute_flag) force->kspace->compute(eflag,vflag);
     }
 
-    modify->pre_reverse(eflag,vflag);
+    modify->setup_pre_reverse(eflag,vflag);
     if (newton[ilevel]) comm->reverse_comm();
     copy_f_flevel(ilevel);
   }
@@ -659,8 +668,13 @@ void Respa::recurse(int ilevel)
           modify->pre_neighbor();
           timer->stamp(Timer::MODIFY);
         }
-        neighbor->build();
+        neighbor->build(1);
         timer->stamp(Timer::NEIGH);
+        if (modify->n_post_neighbor) {
+          modify->post_neighbor();
+          timer->stamp(Timer::MODIFY);
+        }
+
       } else if (ilevel == 0) {
         timer->stamp();
         comm->forward_comm();
@@ -760,7 +774,7 @@ void Respa::recurse(int ilevel)
    clear other arrays as needed
 ------------------------------------------------------------------------- */
 
-void Respa::force_clear(int newtonflag)
+void Respa::force_clear(int /*newtonflag*/)
 {
   if (external_force_clear) return;
 

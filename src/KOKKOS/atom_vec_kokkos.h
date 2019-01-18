@@ -20,51 +20,106 @@
 
 namespace LAMMPS_NS {
 
+union d_ubuf {
+  double d;
+  int64_t i;
+  KOKKOS_INLINE_FUNCTION
+  d_ubuf(double arg) : d(arg) {}
+  KOKKOS_INLINE_FUNCTION
+  d_ubuf(int64_t arg) : i(arg) {}
+  KOKKOS_INLINE_FUNCTION
+  d_ubuf(int arg) : i(arg) {}
+};
+
 class AtomVecKokkos : public AtomVec {
  public:
   AtomVecKokkos(class LAMMPS *);
   virtual ~AtomVecKokkos() {}
+  virtual int pack_comm(int, int *, double *, int, int *);
+  virtual int pack_comm_vel(int, int *, double *, int, int *);
+  virtual void unpack_comm(int, int, double *);
+  virtual void unpack_comm_vel(int, int, double *);
+  virtual int pack_reverse(int, int, double *);
+  virtual void unpack_reverse(int, int *, double *);
 
   virtual void sync(ExecutionSpace space, unsigned int mask) = 0;
   virtual void modified(ExecutionSpace space, unsigned int mask) = 0;
-  virtual void sync_overlapping_device(ExecutionSpace space, unsigned int mask) {};
+  virtual void sync_overlapping_device(ExecutionSpace space, unsigned int mask) = 0;
 
   virtual int
     pack_comm_self(const int &n, const DAT::tdual_int_2d &list,
                    const int & iswap, const int nfirst,
-                   const int &pbc_flag, const int pbc[]) = 0;
-  //{return 0;}
+                   const int &pbc_flag, const int pbc[]);
+
   virtual int
     pack_comm_kokkos(const int &n, const DAT::tdual_int_2d &list,
                      const int & iswap, const DAT::tdual_xfloat_2d &buf,
-                     const int &pbc_flag, const int pbc[]) = 0;
-  //{return 0;}
+                     const int &pbc_flag, const int pbc[]);
+
   virtual void
     unpack_comm_kokkos(const int &n, const int &nfirst,
-                       const DAT::tdual_xfloat_2d &buf) = 0;
+                       const DAT::tdual_xfloat_2d &buf);
+
+  virtual int
+    pack_comm_vel_kokkos(const int &n, const DAT::tdual_int_2d &list,
+                         const int & iswap, const DAT::tdual_xfloat_2d &buf,
+                         const int &pbc_flag, const int pbc[]);
+
+  virtual void
+    unpack_comm_vel_kokkos(const int &n, const int &nfirst,
+                           const DAT::tdual_xfloat_2d &buf);
+
+  virtual int
+    unpack_reverse_self(const int &n, const DAT::tdual_int_2d &list,
+                      const int & iswap, const int nfirst);
+
+  virtual int
+    pack_reverse_kokkos(const int &n, const int &nfirst,
+                        const DAT::tdual_ffloat_2d &buf);
+
+  virtual void
+    unpack_reverse_kokkos(const int &n, const DAT::tdual_int_2d &list,
+                          const int & iswap, const DAT::tdual_ffloat_2d &buf);
+
   virtual int
     pack_border_kokkos(int n, DAT::tdual_int_2d k_sendlist,
                        DAT::tdual_xfloat_2d buf,int iswap,
                        int pbc_flag, int *pbc, ExecutionSpace space) = 0;
-  //{return 0;};
+
   virtual void
     unpack_border_kokkos(const int &n, const int &nfirst,
                          const DAT::tdual_xfloat_2d &buf,
                          ExecutionSpace space) = 0;
 
   virtual int
+    pack_border_vel_kokkos(int n, DAT::tdual_int_2d k_sendlist,
+                           DAT::tdual_xfloat_2d buf,int iswap,
+                           int pbc_flag, int *pbc, ExecutionSpace space) { return 0; }
+
+  virtual void
+    unpack_border_vel_kokkos(const int &n, const int &nfirst,
+                             const DAT::tdual_xfloat_2d &buf,
+                             ExecutionSpace space) {}
+
+  virtual int
     pack_exchange_kokkos(const int &nsend, DAT::tdual_xfloat_2d &buf,
                          DAT::tdual_int_1d k_sendlist,
                          DAT::tdual_int_1d k_copylist,
                          ExecutionSpace space, int dim, X_FLOAT lo, X_FLOAT hi) = 0;
-  //{return 0;};
+
   virtual int
     unpack_exchange_kokkos(DAT::tdual_xfloat_2d &k_buf, int nrecv,
                            int nlocal, int dim, X_FLOAT lo, X_FLOAT hi,
                            ExecutionSpace space) = 0;
-  //{return 0;};
+
+
+  int no_comm_vel_flag,no_border_vel_flag;
 
  protected:
+
+  HAT::t_x_array h_x;
+  HAT::t_v_array h_v;
+  HAT::t_f_array h_f;
 
   class CommKokkos *commKK;
   size_t buffer_size;
@@ -83,17 +138,22 @@ class AtomVecKokkos : public AtomVec {
                    std::is_same<typename ViewType::execution_space,LMPDeviceType>::value,
                    Kokkos::CudaHostPinnedSpace,typename ViewType::memory_space>::type,
                  Kokkos::MemoryTraits<Kokkos::Unmanaged> > mirror_type;
-    if(buffer_size < src.capacity())
+    if (buffer_size == 0) {
+       buffer = Kokkos::kokkos_malloc<Kokkos::CudaHostPinnedSpace>(src.capacity());
+       buffer_size = src.capacity();
+    } else if (buffer_size < src.capacity()) {
        buffer = Kokkos::kokkos_realloc<Kokkos::CudaHostPinnedSpace>(buffer,src.capacity());
+       buffer_size = src.capacity();
+    }
     return mirror_type( buffer ,
-                             src.dimension_0() ,
-                             src.dimension_1() ,
-                             src.dimension_2() ,
-                             src.dimension_3() ,
-                             src.dimension_4() ,
-                             src.dimension_5() ,
-                             src.dimension_6() ,
-                             src.dimension_7() );
+                             src.extent(0) ,
+                             src.extent(1) ,
+                             src.extent(2) ,
+                             src.extent(3) ,
+                             src.extent(4) ,
+                             src.extent(5) ,
+                             src.extent(6) ,
+                             src.extent(7) );
   }
 
   template<class ViewType>
@@ -104,17 +164,22 @@ class AtomVecKokkos : public AtomVec {
                    std::is_same<typename ViewType::execution_space,LMPDeviceType>::value,
                    Kokkos::CudaHostPinnedSpace,typename ViewType::memory_space>::type,
                  Kokkos::MemoryTraits<Kokkos::Unmanaged> > mirror_type;
-    if(buffer_size < src.capacity())
+    if (buffer_size == 0) {
+       buffer = Kokkos::kokkos_malloc<Kokkos::CudaHostPinnedSpace>(src.capacity()*sizeof(typename ViewType::value_type));
+       buffer_size = src.capacity();
+    } else if (buffer_size < src.capacity()) {
        buffer = Kokkos::kokkos_realloc<Kokkos::CudaHostPinnedSpace>(buffer,src.capacity()*sizeof(typename ViewType::value_type));
+       buffer_size = src.capacity();
+    }
     mirror_type tmp_view( (typename ViewType::value_type*)buffer ,
-                             src.dimension_0() ,
-                             src.dimension_1() ,
-                             src.dimension_2() ,
-                             src.dimension_3() ,
-                             src.dimension_4() ,
-                             src.dimension_5() ,
-                             src.dimension_6() ,
-                             src.dimension_7() );
+                             src.extent(0) ,
+                             src.extent(1) ,
+                             src.extent(2) ,
+                             src.extent(3) ,
+                             src.extent(4) ,
+                             src.extent(5) ,
+                             src.extent(6) ,
+                             src.extent(7) );
     if(space == Device) {
       Kokkos::deep_copy(LMPHostType(),tmp_view,src.h_view),
       Kokkos::deep_copy(LMPHostType(),src.d_view,tmp_view);

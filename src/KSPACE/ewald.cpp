@@ -19,10 +19,10 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <math.h>
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <cmath>
 #include "ewald.h"
 #include "atom.h"
 #include "comm.h"
@@ -40,15 +40,19 @@ using namespace MathConst;
 
 /* ---------------------------------------------------------------------- */
 
-Ewald::Ewald(LAMMPS *lmp, int narg, char **arg) : KSpace(lmp, narg, arg)
+Ewald::Ewald(LAMMPS *lmp) : KSpace(lmp),
+  kxvecs(NULL), kyvecs(NULL), kzvecs(NULL), ug(NULL), eg(NULL), vg(NULL),
+  ek(NULL), sfacrl(NULL), sfacim(NULL), sfacrl_all(NULL), sfacim_all(NULL),
+  cs(NULL), sn(NULL), sfacrl_A(NULL), sfacim_A(NULL), sfacrl_A_all(NULL),
+  sfacim_A_all(NULL), sfacrl_B(NULL), sfacim_B(NULL), sfacrl_B_all(NULL),
+  sfacim_B_all(NULL)
 {
-  if (narg != 1) error->all(FLERR,"Illegal kspace_style ewald command");
-
+  group_allocate_flag = 0;
+  kmax_created = 0;
   ewaldflag = 1;
   group_group_enable = 1;
-  group_allocate_flag = 0;
 
-  accuracy_relative = fabs(force->numeric(FLERR,arg[0]));
+  accuracy_relative = 0.0;
 
   kmax = 0;
   kxvecs = kyvecs = kzvecs = NULL;
@@ -61,6 +65,13 @@ Ewald::Ewald(LAMMPS *lmp, int narg, char **arg) : KSpace(lmp, narg, arg)
   cs = sn = NULL;
 
   kcount = 0;
+}
+
+void Ewald::settings(int narg, char **arg)
+{
+  if (narg != 1) error->all(FLERR,"Illegal kspace_style ewald command");
+
+  accuracy_relative = fabs(force->numeric(FLERR,arg[0]));
 }
 
 /* ----------------------------------------------------------------------
@@ -94,7 +105,7 @@ void Ewald::init()
   if (!atom->q_flag) error->all(FLERR,"Kspace style requires atom attribute q");
 
   if (slabflag == 0 && domain->nonperiodic > 0)
-    error->all(FLERR,"Cannot use nonperiodic boundaries with Ewald");
+    error->all(FLERR,"Cannot use non-periodic boundaries with Ewald");
   if (slabflag) {
     if (domain->xperiodic != 1 || domain->yperiodic != 1 ||
         domain->boundary[2][0] != 1 || domain->boundary[2][1] != 1)
@@ -148,6 +159,8 @@ void Ewald::init()
   if (!gewaldflag) {
     if (accuracy <= 0.0)
       error->all(FLERR,"KSpace accuracy must be > 0");
+    if (q2 == 0.0)
+      error->all(FLERR,"Must use 'kspace_modify gewald' for uncharged system");
     g_ewald = accuracy*sqrt(natoms*cutoff*xprd*yprd*zprd) / (2.0*q2);
     if (g_ewald >= 1.0) g_ewald = (1.35 - 0.15*log(accuracy))/cutoff;
     else g_ewald = sqrt(-log(g_ewald)) / cutoff;
@@ -334,6 +347,7 @@ void Ewald::setup()
 
 double Ewald::rms(int km, double prd, bigint natoms, double q2)
 {
+  if (natoms == 0) natoms = 1;   // avoid division by zero
   double value = 2.0*q2*g_ewald/prd *
     sqrt(1.0/(MY_PI*km*natoms)) *
     exp(-MY_PI*MY_PI*km*km/(g_ewald*g_ewald*prd*prd));

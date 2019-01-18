@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -23,8 +23,8 @@ pair_coeff * * multibody.table ENTRY1 7.0 :pre
 [Description:]
 
 Style {multi/lucy} computes a density-dependent force following from
-the many-body form described in "(Moore)"_#Moore and
-"(Warren)"_#Warren as
+the many-body form described in "(Moore)"_#Moore1 and
+"(Warren)"_#Warren1 as
 
 :c,image(Eqs/pair_multi_lucy.jpg)
 
@@ -38,8 +38,8 @@ The density-dependent energy for a given particle is given by:
 
 :c,image(Eqs/pair_multi_lucy_energy.jpg)
 
-See the supporting information of "(Brennan)"_#Brennan or the
-publication by "(Moore)"_#Moore for more details on the functional
+See the supporting information of "(Brennan)"_#Brennan1 or the
+publication by "(Moore)"_#Moore1 for more details on the functional
 form.
 
 An interpolation table is used to evaluate the density-dependent
@@ -138,13 +138,13 @@ NOTE: If you use "R" or "RSQ", the tabulated distance values in the
 file are effectively ignored, and replaced by new values as described
 in the previous paragraph.  If the density value in the table is not
 very close to the new value (i.e. round-off difference), then you will
-be assigning density-dependent energy and force values to a different density, 
+be assigning density-dependent energy and force values to a different density,
 which is probably not what you want.  LAMMPS will warn if this is occurring.
 
 Following a blank line, the next N lines list the tabulated values.
 On each line, the 1st value is the index from 1 to N, the 2nd value is
-r (in density units), the 3rd value is the density-dependent function value 
-(in energy units / length^4), and the 4th is the force (in force units).  The 
+r (in density units), the 3rd value is the density-dependent function value
+(in energy units / length^4), and the 4th is the force (in force units).  The
 density values must increase from one line to the next.
 
 Note that one file can contain many sections, each with a tabulated
@@ -177,8 +177,8 @@ This pair style can only be used via the {pair} keyword of the
 [Restrictions:]
 
 This command is part of the USER-DPD package.  It is only enabled if
-LAMMPS was built with that package.  See the "Making
-LAMMPS"_Section_start.html#start_3 section for more info.
+LAMMPS was built with that package.  See the "Build
+package"_Build_package.html doc page for more info.
 
 [Related commands:]
 
@@ -188,12 +188,12 @@ LAMMPS"_Section_start.html#start_3 section for more info.
 
 :line
 
-:link(Warren)
+:link(Warren1)
 [(Warren)] Warren, Phys Rev E, 68, 066702 (2003).
 
-:link(Brennan)
+:link(Brennan1)
 [(Brennan)] Brennan, J Chem Phys Lett, 5, 2144-2149 (2014).
 
-:link(Moore)
+:link(Moore1)
 [(Moore)] Moore, J Chem Phys, 144, 104501 (2016).
 

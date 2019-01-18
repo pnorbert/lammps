@@ -15,8 +15,8 @@
    Contributing authors: Timothy Sirk (ARL), Pieter in't Veld (BASF)
 ------------------------------------------------------------------------- */
 
-#include <string.h>
-#include <stdlib.h>
+#include <cstring>
+#include <cstdlib>
 #include "fix_srp.h"
 #include "atom.h"
 #include "force.h"
@@ -67,7 +67,7 @@ FixSRP::FixSRP(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
 
   // zero
   for (int i = 0; i < atom->nmax; i++)
-    for (int m = 0; m < 3; m++)
+    for (int m = 0; m < 2; m++)
       array[i][m] = 0.0;
 }
 
@@ -98,8 +98,15 @@ int FixSRP::setmask()
 
 void FixSRP::init()
 {
-  if (force->pair_match("hybrid",1) == NULL)
+  if (force->pair_match("hybrid",1) == NULL && force->pair_match("hybrid/overlay",1) == NULL)
     error->all(FLERR,"Cannot use pair srp without pair_style hybrid");
+
+  int has_rigid = 0;
+  for (int i = 0; i < modify->nfix; i++)
+    if (strncmp(modify->fix[i]->style,"rigid",5) == 0) ++has_rigid;
+
+  if (has_rigid > 0)
+    error->all(FLERR,"Pair srp is not compatible with rigid fixes.");
 
   if ((bptype < 1) || (bptype > atom->ntypes))
     error->all(FLERR,"Illegal bond particle type");
@@ -138,7 +145,7 @@ void FixSRP::init()
    insert bond particles
 ------------------------------------------------------------------------- */
 
-void FixSRP::setup_pre_force(int zz)
+void FixSRP::setup_pre_force(int /*zz*/)
 {
   double **x = atom->x;
   double **xold;
@@ -170,7 +177,7 @@ void FixSRP::setup_pre_force(int zz)
     xold[i][2] = x[i][2];
     tagold[i]=tag[i];
     dlist[i] = (type[i] == bptype) ? 1 : 0;
-    for (n = 0; n < 3; n++)
+    for (n = 0; n < 2; n++)
       array[i][n] = 0.0;
   }
 
@@ -257,21 +264,27 @@ void FixSRP::setup_pre_force(int zz)
   rmax = sqrt(rsqmax);
   double cutneighmax_srp = neighbor->cutneighmax + 0.51*rmax;
 
-  // find smallest cutghost
-  double cutghostmin = comm->cutghost[0];
-  if (cutghostmin > comm->cutghost[1])
-    cutghostmin = comm->cutghost[1];
-  if (cutghostmin > comm->cutghost[2])
-    cutghostmin = comm->cutghost[2];
+  double length0,length1,length2;
+  if (domain->triclinic) {
+    double *h_inv = domain->h_inv;
+    length0 = sqrt(h_inv[0]*h_inv[0] + h_inv[5]*h_inv[5] + h_inv[4]*h_inv[4]);
+    length1 = sqrt(h_inv[1]*h_inv[1] + h_inv[3]*h_inv[3]);
+    length2 = h_inv[2];
+  } else length0 = length1 = length2 = 1.0;
 
-  // reset cutghost if needed
+  // find smallest cutghost.
+  // comm->cutghost is stored in fractional coordinates for triclinic
+  double cutghostmin = comm->cutghost[0]/length0;
+  if (cutghostmin > comm->cutghost[1]/length1)
+    cutghostmin = comm->cutghost[1]/length1;
+  if (cutghostmin > comm->cutghost[2]/length2)
+    cutghostmin = comm->cutghost[2]/length2;
+
+  // stop if cutghost is insufficient
   if (cutneighmax_srp > cutghostmin){
-    if(comm->me == 0){
-      sprintf(str, "Extending ghost comm cutoff. New %f, old %f.", cutneighmax_srp, cutghostmin);
-      error->message(FLERR,str);
-    }
-    // cutghost updated by comm->setup
-    comm->cutghostuser = cutneighmax_srp;
+    sprintf(str, "Communication cutoff too small for fix srp. "
+            "Need %f, current %f.", cutneighmax_srp, cutghostmin);
+    error->all(FLERR,str);
   }
 
   // assign tags for new atoms, update map
@@ -300,7 +313,7 @@ void FixSRP::setup_pre_force(int zz)
   domain->image_check();
   domain->box_too_small_check();
   modify->setup_pre_neighbor();
-  neighbor->build();
+  neighbor->build(1);
   neighbor->ncalls = 0;
 
   // new atom counts
@@ -381,7 +394,7 @@ void FixSRP::grow_arrays(int nmax)
    called when move to new proc
 ------------------------------------------------------------------------- */
 
-void FixSRP::copy_arrays(int i, int j, int delflag)
+void FixSRP::copy_arrays(int i, int j, int /*delflag*/)
 {
   for (int m = 0; m < 2; m++)
     array[j][m] = array[i][m];
@@ -576,7 +589,7 @@ int FixSRP::maxsize_restart()
    size of atom nlocal's restart data
 ------------------------------------------------------------------------- */
 
-int FixSRP::size_restart(int nlocal)
+int FixSRP::size_restart(int /*nlocal*/)
 {
   return 3;
 }
@@ -619,7 +632,7 @@ void FixSRP::restart(char *buf)
    pair srp sets the bond type in this fix
 ------------------------------------------------------------------------- */
 
-int FixSRP::modify_param(int narg, char **arg)
+int FixSRP::modify_param(int /*narg*/, char **arg)
 {
   if (strcmp(arg[0],"btype") == 0) {
     btype = atoi(arg[1]);

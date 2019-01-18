@@ -11,8 +11,8 @@
  See the README file in the top-level LAMMPS directory.
  ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "pair_sph_rhosum.h"
 #include "atom.h"
 #include "force.h"
@@ -228,7 +228,7 @@ void PairSPHRhoSum::allocate() {
 void PairSPHRhoSum::settings(int narg, char **arg) {
   if (narg != 1)
     error->all(FLERR,
-        "Illegal number of setting arguments for pair_style sph/rhosum");
+        "Illegal number of arguments for pair_style sph/rhosum");
   nstep = force->inumeric(FLERR,arg[0]);
 }
 
@@ -243,8 +243,8 @@ void PairSPHRhoSum::coeff(int narg, char **arg) {
     allocate();
 
   int ilo, ihi, jlo, jhi;
-  force->bounds(arg[0], atom->ntypes, ilo, ihi);
-  force->bounds(arg[1], atom->ntypes, jlo, jhi);
+  force->bounds(FLERR,arg[0], atom->ntypes, ilo, ihi);
+  force->bounds(FLERR,arg[1], atom->ntypes, jlo, jhi);
 
   double cut_one = force->numeric(FLERR,arg[2]);
 
@@ -278,8 +278,8 @@ double PairSPHRhoSum::init_one(int i, int j) {
 
 /* ---------------------------------------------------------------------- */
 
-double PairSPHRhoSum::single(int i, int j, int itype, int jtype, double rsq,
-    double factor_coul, double factor_lj, double &fforce) {
+double PairSPHRhoSum::single(int /*i*/, int /*j*/, int /*itype*/, int /*jtype*/, double /*rsq*/,
+    double /*factor_coul*/, double /*factor_lj*/, double &fforce) {
   fforce = 0.0;
 
   return 0.0;
@@ -288,7 +288,7 @@ double PairSPHRhoSum::single(int i, int j, int itype, int jtype, double rsq,
 /* ---------------------------------------------------------------------- */
 
 int PairSPHRhoSum::pack_forward_comm(int n, int *list, double *buf,
-                                     int pbc_flag, int *pbc) {
+                                     int /*pbc_flag*/, int * /*pbc*/) {
   int i, j, m;
   double *rho = atom->rho;
 

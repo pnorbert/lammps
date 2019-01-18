@@ -26,7 +26,7 @@
                     (2002)
                   This potential does not affect small amplitude vibrations
                   but is used in an ad hoc way to prevent the onset of
-                  accidentially large amplitude fluctuations leading to
+                  accidentally large amplitude fluctuations leading to
                   the occurrence of a planar conformation of the three
                   bonds i, i + 1 and i', an intermediate conformation
                   toward the chiral inversion of a methine carbon.
@@ -37,8 +37,8 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "improper_ring.h"
 #include "atom.h"
 #include "comm.h"
@@ -204,7 +204,7 @@ void ImproperRing::compute(int eflag, int vflag)
          cfact2 = ckjji / ckjkj;
          cfact3 = ckjji / cjiji;
 
-         /* Calculate the force acted on the thrid atom of the angle. */
+         /* Calculate the force acted on the third atom of the angle. */
          fkx = cfact2 * bvec2x[icomb] - bvec1x[icomb];
          fky = cfact2 * bvec2y[icomb] - bvec1y[icomb];
          fkz = cfact2 * bvec2z[icomb] - bvec1z[icomb];
@@ -291,7 +291,7 @@ void ImproperRing ::coeff(int narg, char **arg)
    if (!allocated) allocate();
 
    int ilo,ihi;
-   force->bounds(arg[0],atom->nimpropertypes,ilo,ihi);
+   force->bounds(FLERR,arg[0],atom->nimpropertypes,ilo,ihi);
 
    double k_one = force->numeric(FLERR,arg[1]);
    double chi_one = force->numeric(FLERR,arg[2]);
@@ -336,4 +336,14 @@ void ImproperRing::read_restart(FILE *fp)
   MPI_Bcast(&chi[1],atom->nimpropertypes,MPI_DOUBLE,0,world);
 
   for (int i = 1; i <= atom->nimpropertypes; i++) setflag[i] = 1;
+}
+
+/* ----------------------------------------------------------------------
+   proc 0 writes to data file
+------------------------------------------------------------------------- */
+
+void ImproperRing::write_data(FILE *fp)
+{
+  for (int i = 1; i <= atom->nimpropertypes; i++)
+    fprintf(fp,"%d %g %g\n",i,k[i],acos(chi[i])/MY_PI*180.0);
 }

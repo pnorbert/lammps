@@ -1,6 +1,10 @@
 # Depend.sh = Install/unInstall files due to package dependencies
 # this script is invoked after any package is installed/uninstalled
 
+# enforce using portable C locale
+LC_ALL=C
+export LC_ALL
+
 # all parent/child package dependencies should be listed below
 # parent package = has files that files in another package derive from
 # child package = has files that derive from files in another package
@@ -44,11 +48,13 @@ depend () {
 if (test $1 = "ASPHERE") then
   depend GPU
   depend USER-OMP
+  depend USER-CGDNA
   depend USER-INTEL
 fi
 
 if (test $1 = "CLASS2") then
   depend GPU
+  depend KOKKOS
   depend USER-OMP
 fi
 
@@ -81,6 +87,7 @@ if (test $1 = "MANYBODY") then
   depend GPU
   depend KOKKOS
   depend OPT
+  depend QEQ
   depend USER-MISC
   depend USER-OMP
 fi
@@ -89,8 +96,8 @@ if (test $1 = "MOLECULE") then
   depend GPU
   depend KOKKOS
   depend USER-MISC
-  depend USER-OMP
   depend USER-FEP
+  depend USER-OMP
   depend USER-INTEL
 fi
 
@@ -100,11 +107,24 @@ fi
 
 if (test $1 = "RIGID") then
   depend USER-OMP
+  depend USER-SDPD
 fi
 
-if (test $1 = "USER-CG-CMM") then
+if (test $1 = "SNAP") then
+  depend KOKKOS
+fi
+
+if (test $1 = "USER-CGSDK") then
   depend GPU
   depend KOKKOS
+  depend USER-OMP
+fi
+
+if (test $1 = "USER-DPD") then
+  depend KOKKOS
+fi
+
+if (test $1 = "USER-DRUDE") then
   depend USER-OMP
 fi
 
@@ -115,8 +135,10 @@ fi
 if (test $1 = "USER-MISC") then
   depend GPU
   depend USER-OMP
+  depend USER-INTEL
 fi
 
 if (test $1 = "USER-REAXC") then
   depend KOKKOS
+  depend USER-OMP
 fi

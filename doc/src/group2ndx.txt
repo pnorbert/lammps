@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -44,7 +44,7 @@ stored in an index file. Without specifying any group IDs, all groups except
 {System} will be read from the index file and the corresponding groups
 recreated. If a group of the same name already exists, it will be completely
 reset. When specifying group IDs, those groups, if present, will be read
-from the index file and restored. 
+from the index file and restored.
 
 :line
 
@@ -54,8 +54,8 @@ This command requires that atoms have atom IDs, since this is the
 information that is written to the index file.
 
 These commands are part of the USER-COLVARS package.  They are only
-enabled if LAMMPS was built with that package.  See the "Making
-LAMMPS"_Section_start.html#start_3 section for more info.
+enabled if LAMMPS was built with that package.  See the "Build
+package"_Build_package.html doc page for more info.
 
 [Related commands:]
 

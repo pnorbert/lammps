@@ -11,10 +11,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_coul_cut_kokkos.h"
 #include "kokkos.h"
 #include "atom_kokkos.h"
@@ -27,7 +27,7 @@
 #include "integrate.h"
 #include "respa.h"
 #include "math_const.h"
-#include "memory.h"
+#include "memory_kokkos.h"
 #include "error.h"
 #include "atom_masks.h"
 
@@ -55,7 +55,7 @@ template<class DeviceType>
 PairCoulCutKokkos<DeviceType>::~PairCoulCutKokkos()
 {
   if (allocated)
-    memory->destroy_kokkos(k_cutsq, cutsq);
+    memoryKK->destroy_kokkos(k_cutsq, cutsq);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -78,10 +78,23 @@ void PairCoulCutKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
   vflag = vflag_in;
 
 
-  if (neighflag == FULL || neighflag == FULLCLUSTER) no_virial_fdotr_compute = 1;
+  if (neighflag == FULL) no_virial_fdotr_compute = 1;
 
-  if (eflag || vflag) ev_setup(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag,0);
   else evflag = vflag_fdotr = 0;
+
+  // reallocate per-atom arrays if necessary
+
+  if (eflag_atom) {
+    memoryKK->destroy_kokkos(k_eatom,eatom);
+    memoryKK->create_kokkos(k_eatom,eatom,maxeatom,"pair:eatom");
+    d_eatom = k_eatom.view<DeviceType>();
+  }
+  if (vflag_atom) {
+    memoryKK->destroy_kokkos(k_vatom,vatom);
+    memoryKK->create_kokkos(k_vatom,vatom,maxvatom,6,"pair:vatom");
+    d_vatom = k_vatom.view<DeviceType>();
+  }
 
   atomKK->sync(execution_space,datamask_read);
   k_cutsq.template sync<DeviceType>();
@@ -122,6 +135,16 @@ void PairCoulCutKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
     virial[3] += ev.v[3];
     virial[4] += ev.v[4];
     virial[5] += ev.v[5];
+  }
+
+  if (eflag_atom) {
+    k_eatom.template modify<DeviceType>();
+    k_eatom.template sync<LMPHostType>();
+  }
+
+  if (vflag_atom) {
+    k_vatom.template modify<DeviceType>();
+    k_vatom.template sync<LMPHostType>();
   }
 
   if (vflag_fdotr) pair_virial_fdotr_compute(this);
@@ -167,7 +190,7 @@ void PairCoulCutKokkos<DeviceType>::allocate()
 
   int n = atom->ntypes;
   memory->destroy(cutsq);
-  memory->create_kokkos(k_cutsq,cutsq,n+1,n+1,"pair:cutsq");
+  memoryKK->create_kokkos(k_cutsq,cutsq,n+1,n+1,"pair:cutsq");
   d_cutsq = k_cutsq.template view<DeviceType>();
 
   k_cut_ljsq = typename ArrayTypes<DeviceType>::tdual_ffloat_2d("pair:cut_ljsq",n+1,n+1);
@@ -176,7 +199,7 @@ void PairCoulCutKokkos<DeviceType>::allocate()
   d_cut_coulsq = k_cut_coulsq.template view<DeviceType>();
 
   k_params = Kokkos::DualView<params_coul**,Kokkos::LayoutRight,DeviceType>("PairCoulCut::params",n+1,n+1);
-  params = k_params.d_view;
+  params = k_params.template view<DeviceType>();
 }
 
 /* ----------------------------------------------------------------------
@@ -215,11 +238,9 @@ void PairCoulCutKokkos<DeviceType>::init_style()
   if (neighflag == FULL) {
     neighbor->requests[irequest]->full = 1;
     neighbor->requests[irequest]->half = 0;
-    neighbor->requests[irequest]->full_cluster = 0;
   } else if (neighflag == HALF || neighflag == HALFTHREAD) {
     neighbor->requests[irequest]->full = 0;
     neighbor->requests[irequest]->half = 1;
-    neighbor->requests[irequest]->full_cluster = 0;
   } else {
     error->all(FLERR,"Cannot use chosen neighbor list style with coul/cut/kk");
   }

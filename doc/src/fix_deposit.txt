@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -15,7 +15,7 @@ fix ID group-ID deposit N type M seed keyword values ... :pre
 ID, group-ID are documented in "fix"_fix.html command :ulb,l
 deposit = style name of this fix command :l
 N = # of atoms or molecules to insert :l
-type = atom type to assign to inserted atoms (offset for moleclue insertion) :l
+type = atom type to assign to inserted atoms (offset for molecule insertion) :l
 M = insert a single atom or molecule every M steps :l
 seed = random # seed (positive integer) :l
 one or more keyword/value pairs may be appended to args :l
@@ -116,8 +116,8 @@ side = {in}.
 
 NOTE: LAMMPS checks that the specified region is wholly inside the
 simulation box.  It can do this correctly for orthonormal simulation
-boxes.  However for "triclinic boxes"_Section_howto.html#howto_12, it
-only tests against the larger orthonormal box that bounds the tilted
+boxes.  However for "triclinic boxes"_Howto_triclinic.html, it only
+tests against the larger orthonormal box that bounds the tilted
 simulation box.  If the specified region includes volume outside the
 tilted box, then an insertion will likely fail, leading to a "lost
 atoms" error.  Thus for triclinic boxes you should insure the
@@ -140,15 +140,21 @@ the molecule.
 
 If the molecule template contains more than one molecule, the relative
 probability of depositing each molecule can be specified by the
-{molfrac} keyword.  N relative probablities, each from 0.0 to 1.0, are
+{molfrac} keyword.  N relative probabilities, each from 0.0 to 1.0, are
 specified, where N is the number of molecules in the template.  Each
 time a molecule is deposited, a random number is used to sample from
 the list of relative probabilities.  The N values must sum to 1.0.
 
 If you wish to insert molecules via the {mol} keyword, that will be
 treated as rigid bodies, use the {rigid} keyword, specifying as its
-value the ID of a separate "fix rigid/small"_fix_rigid_small.html
+value the ID of a separate "fix rigid/small"_fix_rigid.html
 command which also appears in your input script.
+
+NOTE: If you wish the new rigid molecules (and other rigid molecules)
+to be thermostatted correctly via "fix rigid/small/nvt"_fix_rigid.html
+or "fix rigid/small/npt"_fix_rigid.html, then you need to use the
+"fix_modify dynamic/dof yes" command for the rigid fix.  This is to
+inform that fix that the molecule count will vary dynamically.
 
 If you wish to insert molecules via the {mol} keyword, that will have
 their bonds or angles constrained via SHAKE, use the {shake} keyword,
@@ -192,7 +198,7 @@ LAMMPS prints a warning message.
 NOTE: If you are inserting finite size particles or a molecule or
 rigid body consisting of finite-size particles, then you should
 typically set R larger than the distance at which any inserted
-particle may overlap with either a previouly inserted particle or an
+particle may overlap with either a previously inserted particle or an
 existing particle.  LAMMPS will issue a warning if R is smaller than
 this value, based on the radii of existing and inserted particles.
 
@@ -249,7 +255,7 @@ temperature compute you are using.
 
 This fix writes the state of the deposition to "binary restart
 files"_restart.html.  This includes information about how many
-particles have been depositied, the random number generator seed, the
+particles have been deposited, the random number generator seed, the
 next timestep for deposition, etc.  See the
 "read_restart"_read_restart.html command for info on how to re-specify
 a fix in an input script that reads a restart file, so that the
@@ -257,16 +263,16 @@ operation of the fix continues in an uninterrupted fashion.
 
 None of the "fix_modify"_fix_modify.html options are relevant to this
 fix.  No global or per-atom quantities are stored by this fix for
-access by various "output commands"_Section_howto.html#howto_15.  No
-parameter of this fix can be used with the {start/stop} keywords of
-the "run"_run.html command.  This fix is not invoked during "energy
+access by various "output commands"_Howto_output.html.  No parameter
+of this fix can be used with the {start/stop} keywords of the
+"run"_run.html command.  This fix is not invoked during "energy
 minimization"_minimize.html.
 
 [Restrictions:]
 
 This fix is part of the MISC package.  It is only enabled if LAMMPS
-was built with that package.  See the "Making
-LAMMPS"_Section_start.html#start_3 section for more info.
+was built with that package.  See the "Build
+package"_Build_package.html doc page for more info.
 
 The specified insertion region cannot be a "dynamic" region, as
 defined by the "region"_region.html command.

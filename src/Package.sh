@@ -1,6 +1,10 @@
 # Package.sh = package management, called from Makefile
 # Syntax: sh Package.sh DIR status/update/overwrite/diff
 
+# enforce using portable C locale
+LC_ALL=C
+export LC_ALL
+
 # package is already installed if any package *.cpp or *.h file is in src
 # else not installed
 
@@ -28,6 +32,13 @@ if (test $2 = "status") then
     done
   else
     echo "Installed  NO: package $1"
+  fi
+
+# installed, list only if installed
+
+elif (test $2 = "installed") then
+  if (test $installed = 1) then
+    echo "Installed YES: package $1"
   fi
 
 # update, only if installed

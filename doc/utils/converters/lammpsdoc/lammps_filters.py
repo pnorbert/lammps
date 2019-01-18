@@ -64,7 +64,7 @@ def filter_file_header_until_first_horizontal_line(content):
 
     common_links = "\n.. _lws: http://lammps.sandia.gov\n" \
                    ".. _ld: Manual.html\n" \
-                   ".. _lc: Section_commands.html#comm\n"
+                   ".. _lc: Commands_all.html\n"
 
     if first_hr >= 0:
         return content[first_hr+len(hr):].lstrip() + common_links
@@ -90,3 +90,24 @@ def promote_doc_keywords(content):
 
 def filter_multiple_horizontal_rules(content):
     return re.sub(r"----------[\s\n]+----------", '', content)
+
+
+def merge_preformatted_sections(content):
+    mergable_section_pattern = re.compile(r"\.\. parsed-literal::\n"
+                                          r"\n"
+                                          r"(?P<listingA>((   [^\n]+\n)|(^\n))+)\n\s*"
+                                          r"^\.\. parsed-literal::\n"
+                                          r"\n"
+                                          r"(?P<listingB>((   [^\n]+\n)|(^\n))+)\n", re.MULTILINE | re.DOTALL)
+
+    m = mergable_section_pattern.search(content)
+
+    while m:
+        content = mergable_section_pattern.sub(r".. parsed-literal::\n"
+                                            r"\n"
+                                            r"\g<listingA>"
+                                            r"\g<listingB>"
+                                            r"\n", content)
+        m = mergable_section_pattern.search(content)
+
+    return content

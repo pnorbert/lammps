@@ -15,9 +15,9 @@
    Contributing author: Eric Simon (Cray)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <string.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstring>
+#include <cstdlib>
 #include "improper_class2.h"
 #include "atom.h"
 #include "neighbor.h"
@@ -45,6 +45,8 @@ ImproperClass2::ImproperClass2(LAMMPS *lmp) : Improper(lmp)
 
 ImproperClass2::~ImproperClass2()
 {
+  if (copymode) return;
+
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(setflag_i);
@@ -529,7 +531,7 @@ void ImproperClass2::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->nimpropertypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->nimpropertypes,ilo,ihi);
 
   int count = 0;
 
@@ -631,7 +633,7 @@ void ImproperClass2::read_restart(FILE *fp)
    angle-angle interactions within improper
 ------------------------------------------------------------------------- */
 
-void ImproperClass2::angleangle(int eflag, int vflag)
+void ImproperClass2::angleangle(int eflag, int /*vflag*/)
 {
   int i1,i2,i3,i4,i,j,k,n,type;
   double eimproper;
@@ -819,7 +821,8 @@ void ImproperClass2::angleangle(int eflag, int vflag)
     if (evflag)
       ev_tally(i1,i2,i3,i4,nlocal,newton_bond,eimproper,
                fabcd[0],fabcd[2],fabcd[3],
-               delxAB,delyAB,delzAB,delxBC,delyBC,delzBC,delxBD,delyBD,delzBD);
+               delxAB,delyAB,delzAB,delxBC,delyBC,delzBC,
+               delxBD-delxBC,delyBD-delyBC,delzBD-delzBC);
   }
 }
 

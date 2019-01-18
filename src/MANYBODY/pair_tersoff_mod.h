@@ -21,6 +21,7 @@ PairStyle(tersoff/mod,PairTersoffMOD)
 #define LMP_PAIR_TERSOFF_MOD_H
 
 #include "pair_tersoff.h"
+#include <cmath>
 
 namespace LAMMPS_NS {
 
@@ -30,7 +31,7 @@ class PairTersoffMOD : public PairTersoff {
   ~PairTersoffMOD() {}
 
  protected:
-  void read_file(char *);
+  virtual void read_file(char *);
   virtual void setup_params();
   double zeta(Param *, double, double, double *, double *);
 
@@ -39,7 +40,7 @@ class PairTersoffMOD : public PairTersoff {
   double ters_bij(double, Param *);
   double ters_bij_d(double, Param *);
   void ters_zetaterm_d(double, double *, double, double *, double,
-			       double *, double *, double *, Param *);
+                               double *, double *, double *, Param *);
 
   // inlined functions for efficiency
   // these replace but do not override versions in PairTersoff

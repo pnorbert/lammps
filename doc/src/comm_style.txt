@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -39,7 +39,7 @@ sizes and shapes.  Again there is one tile per processor.  To acquire
 information for nearby atoms, communication must now be done with a
 more complex pattern of neighboring processors.
 
-Note that this command does not actually define a partitoining of the
+Note that this command does not actually define a partitioning of the
 simulation box (a domain decomposition), rather it determines what
 kinds of decompositions are allowed and the pattern of communication
 used to enable the decomposition.  A decomposition is created when the
@@ -51,7 +51,10 @@ decomposition will be the same, as described by
 commands.  The decomposition can be changed via the
 "balance"_balance.html or "fix balance"_fix_balance.html commands.
 
-[Restrictions:] none
+[Restrictions:]
+
+Communication style {tiled} cannot be used with {triclinic} simulation
+cells.
 
 [Related commands:]
 

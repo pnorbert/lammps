@@ -76,11 +76,11 @@ class FixLangevin : public Fix {
 #define TEMPLATED_FIX_LANGEVIN
 #ifdef TEMPLATED_FIX_LANGEVIN
   template < int Tp_TSTYLEATOM, int Tp_GJF, int Tp_TALLY,
-	     int Tp_BIAS, int Tp_RMASS, int Tp_ZERO >
+             int Tp_BIAS, int Tp_RMASS, int Tp_ZERO >
   void post_force_templated();
 #else
   void post_force_untemplated(int, int, int,
-			      int, int, int);
+                              int, int, int);
 #endif
   void omega_thermostat();
   void angmom_thermostat();
@@ -132,7 +132,7 @@ One of the particles has radius 0.0.
 
 E: Fix langevin angmom requires extended particles
 
-This fix option cannot be used with point paritlces.
+This fix option cannot be used with point particles.
 
 E: Cannot zero Langevin force of 0 atoms
 

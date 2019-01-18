@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 
-#include <math.h>
+#include <cmath>
 #include "math_vector.h"
 #include "pair_buck_long_coul_long_omp.h"
 #include "atom.h"
@@ -319,7 +319,7 @@ void PairBuckLongCoulLongOMP::compute_inner()
 
   const int nall = atom->nlocal + atom->nghost;
   const int nthreads = comm->nthreads;
-  const int inum = listinner->inum;
+  const int inum = list->inum_inner;
 #if defined(_OPENMP)
 #pragma omp parallel default(none)
 #endif
@@ -343,7 +343,7 @@ void PairBuckLongCoulLongOMP::compute_middle()
 
   const int nall = atom->nlocal + atom->nghost;
   const int nthreads = comm->nthreads;
-  const int inum = listmiddle->inum;
+  const int inum = list->inum_middle;
 
 #if defined(_OPENMP)
 #pragma omp parallel default(none)
@@ -373,7 +373,7 @@ void PairBuckLongCoulLongOMP::compute_outer(int eflag, int vflag)
 
   const int nall = atom->nlocal + atom->nghost;
   const int nthreads = comm->nthreads;
-  const int inum = listouter->inum;
+  const int inum = list->inum;
 
 #if defined(_OPENMP)
 #pragma omp parallel default(none) shared(eflag,vflag)
@@ -678,7 +678,7 @@ void PairBuckLongCoulLongOMP::eval(int iifrom, int iito, ThrData * const thr)
       ni = sbmask(j);
       j &= NEIGHMASK;
 
-      { register const double *xj = x0+(j+(j<<1));
+      { const double *xj = x0+(j+(j<<1));
         d[0] = xi[0] - xj[0];                                // pair vector
         d[1] = xi[1] - xj[1];
         d[2] = xi[2] - xj[2]; }
@@ -689,25 +689,25 @@ void PairBuckLongCoulLongOMP::eval(int iifrom, int iito, ThrData * const thr)
 
       if (ORDER1 && (rsq < cut_coulsq)) {                // coulombic
         if (!CTABLE || rsq <= tabinnersq) {        // series real space
-          register double x = g_ewald*r;
-          register double s = qri*q[j], t = 1.0/(1.0+EWALD_P*x);
+          double x = g_ewald*r;
+          double s = qri*q[j], t = 1.0/(1.0+EWALD_P*x);
           if (ni == 0) {
             s *= g_ewald*exp(-x*x);
             force_coul = (t *= ((((t*A5+A4)*t+A3)*t+A2)*t+A1)*s/x)+EWALD_F*s;
             if (EFLAG) ecoul = t;
           }
           else {                                        // special case
-            register double f = s*(1.0-special_coul[ni])/r;
+            double f = s*(1.0-special_coul[ni])/r;
             s *= g_ewald*exp(-x*x);
             force_coul = (t *= ((((t*A5+A4)*t+A3)*t+A2)*t+A1)*s/x)+EWALD_F*s-f;
             if (EFLAG) ecoul = t-f;
           }
         }                                                // table real space
         else {
-          register union_int_float_t t;
+          union_int_float_t t;
           t.f = rsq;
-          register const int k = (t.i & ncoulmask) >> ncoulshiftbits;
-          register double f = (rsq-rtable[k])*drtable[k], qiqj = qi*q[j];
+          const int k = (t.i & ncoulmask) >> ncoulshiftbits;
+          double f = (rsq-rtable[k])*drtable[k], qiqj = qi*q[j];
           if (ni == 0) {
             force_coul = qiqj*(ftable[k]+f*dftable[k]);
             if (EFLAG) ecoul = qiqj*(etable[k]+f*detable[k]);
@@ -722,11 +722,11 @@ void PairBuckLongCoulLongOMP::eval(int iifrom, int iito, ThrData * const thr)
       else force_coul = ecoul = 0.0;
 
       if (rsq < cut_bucksqi[typej]) {                        // buckingham
-        register double rn = r2inv*r2inv*r2inv,
+        double rn = r2inv*r2inv*r2inv,
                         expr = exp(-r*rhoinvi[typej]);
         if (ORDER6) {                                        // long-range
           if (!DISPTABLE || rsq <= tabinnerdispsq) {
-            register double x2 = g2*rsq, a2 = 1.0/x2;
+            double x2 = g2*rsq, a2 = 1.0/x2;
             x2 = a2*exp(-x2)*buckci[typej];
             if (ni == 0) {
               force_buck =
@@ -734,7 +734,7 @@ void PairBuckLongCoulLongOMP::eval(int iifrom, int iito, ThrData * const thr)
               if (EFLAG) evdwl = expr*buckai[typej]-g6*((a2+1.0)*a2+0.5)*x2;
             }
             else {                                        // special case
-              register double f = special_lj[ni], t = rn*(1.0-f);
+              double f = special_lj[ni], t = rn*(1.0-f);
               force_buck = f*r*expr*buck1i[typej]-
                 g8*(((6.0*a2+6.0)*a2+3.0)*a2+1.0)*x2*rsq+t*buck2i[typej];
               if (EFLAG) evdwl = f*expr*buckai[typej] -
@@ -742,16 +742,16 @@ void PairBuckLongCoulLongOMP::eval(int iifrom, int iito, ThrData * const thr)
             }
           }
           else {                                              //table real space
-            register union_int_float_t disp_t;
+            union_int_float_t disp_t;
             disp_t.f = rsq;
-            register const int disp_k = (disp_t.i & ndispmask)>>ndispshiftbits;
-            register double f_disp = (rsq-rdisptable[disp_k])*drdisptable[disp_k];
+            const int disp_k = (disp_t.i & ndispmask)>>ndispshiftbits;
+            double f_disp = (rsq-rdisptable[disp_k])*drdisptable[disp_k];
             if (ni == 0) {
               force_buck = r*expr*buck1i[typej]-(fdisptable[disp_k]+f_disp*dfdisptable[disp_k])*buckci[typej];
               if (EFLAG) evdwl = expr*buckai[typej]-(edisptable[disp_k]+f_disp*dedisptable[disp_k])*buckci[typej];
             }
             else {                                             //speial case
-              register double f = special_lj[ni], t = rn*(1.0-f);
+              double f = special_lj[ni], t = rn*(1.0-f);
               force_buck = f*r*expr*buck1i[typej] -(fdisptable[disp_k]+f_disp*dfdisptable[disp_k])*buckci[typej] +t*buck2i[typej];
               if (EFLAG) evdwl = f*expr*buckai[typej] -(edisptable[disp_k]+f_disp*dedisptable[disp_k])*buckci[typej]+t*buckci[typej];
             }
@@ -764,7 +764,7 @@ void PairBuckLongCoulLongOMP::eval(int iifrom, int iito, ThrData * const thr)
                          rn*buckci[typej]-offseti[typej];
           }
           else {                                        // special case
-            register double f = special_lj[ni];
+            double f = special_lj[ni];
             force_buck = f*(r*expr*buck1i[typej]-rn*buck2i[typej]);
             if (EFLAG)
               evdwl = f*(expr*buckai[typej]-rn*buckci[typej]-offseti[typej]);
@@ -776,7 +776,7 @@ void PairBuckLongCoulLongOMP::eval(int iifrom, int iito, ThrData * const thr)
       fpair = (force_coul+force_buck)*r2inv;
 
       if (NEWTON_PAIR || j < nlocal) {
-        register double *fj = f0+(j+(j<<1)), f;
+        double *fj = f0+(j+(j<<1)), f;
         fi[0] += f = d[0]*fpair; fj[0] -= f;
         fi[1] += f = d[1]*fpair; fj[1] -= f;
         fi[2] += f = d[2]*fpair; fj[2] -= f;
@@ -788,7 +788,7 @@ void PairBuckLongCoulLongOMP::eval(int iifrom, int iito, ThrData * const thr)
       }
 
       if (EVFLAG) ev_tally_thr(this,i,j,nlocal,NEWTON_PAIR,
-			       evdwl,ecoul,fpair,d[0],d[1],d[2],thr);
+                               evdwl,ecoul,fpair,d[0],d[1],d[2],thr);
     }
   }
 }
@@ -811,7 +811,7 @@ void PairBuckLongCoulLongOMP::eval_inner(int iifrom, int iito, ThrData * const t
   const double *x0 = x[0];
   double *f0 = f[0], *fi = 0;
 
-  int *ilist = listinner->ilist;
+  int *ilist = list->ilist_inner;
 
   const int newton_pair = force->newton_pair;
 
@@ -835,14 +835,14 @@ void PairBuckLongCoulLongOMP::eval_inner(int iifrom, int iito, ThrData * const t
     memcpy(xi, x0+(i+(i<<1)), sizeof(vector));
     cut_bucksqi = cut_bucksq[typei = type[i]];
     buck1i = buck1[typei]; buck2i = buck2[typei]; rhoinvi = rhoinv[typei];
-    jneighn = (jneigh = listinner->firstneigh[i])+listinner->numneigh[i];
+    jneighn = (jneigh = list->firstneigh_inner[i])+list->numneigh_inner[i];
 
     for (; jneigh<jneighn; ++jneigh) {                        // loop over neighbors
       j = *jneigh;
       ni = sbmask(j);
       j &= NEIGHMASK;
 
-      { register const double *xj = x0+(j+(j<<1));
+      { const double *xj = x0+(j+(j<<1));
         d[0] = xi[0] - xj[0];                                // pair vector
         d[1] = xi[1] - xj[1];
         d[2] = xi[2] - xj[2]; }
@@ -856,7 +856,7 @@ void PairBuckLongCoulLongOMP::eval_inner(int iifrom, int iito, ThrData * const t
           qri*q[j]/r : qri*q[j]/r*special_coul[ni];
 
       if (rsq < cut_bucksqi[typej = type[j]]) {                // buckingham
-        register double rn = r2inv*r2inv*r2inv,
+        double rn = r2inv*r2inv*r2inv,
                         expr = exp(-r*rhoinvi[typej]);
         force_buck = ni == 0 ?
           (r*expr*buck1i[typej]-rn*buck2i[typej]) :
@@ -867,12 +867,12 @@ void PairBuckLongCoulLongOMP::eval_inner(int iifrom, int iito, ThrData * const t
       fpair = (force_coul + force_buck) * r2inv;
 
       if (rsq > cut_out_on_sq) {                        // switching
-        register double rsw = (sqrt(rsq) - cut_out_on)/cut_out_diff;
+        double rsw = (sqrt(rsq) - cut_out_on)/cut_out_diff;
         fpair  *= 1.0 + rsw*rsw*(2.0*rsw-3.0);
       }
 
       if (newton_pair || j < nlocal) {                        // force update
-        register double *fj = f0+(j+(j<<1)), f;
+        double *fj = f0+(j+(j<<1)), f;
         fi[0] += f = d[0]*fpair; fj[0] -= f;
         fi[1] += f = d[1]*fpair; fj[1] -= f;
         fi[2] += f = d[2]*fpair; fj[2] -= f;
@@ -904,7 +904,7 @@ void PairBuckLongCoulLongOMP::eval_middle(int iifrom, int iito, ThrData * const 
   const double *x0 = x[0];
   double *f0 = f[0], *fi = 0;
 
-  int *ilist = listmiddle->ilist;
+  int *ilist = list->ilist_middle;
 
   const int newton_pair = force->newton_pair;
 
@@ -932,14 +932,14 @@ void PairBuckLongCoulLongOMP::eval_middle(int iifrom, int iito, ThrData * const 
     memcpy(xi, x0+(i+(i<<1)), sizeof(vector));
     cut_bucksqi = cut_bucksq[typei = type[i]];
     buck1i = buck1[typei]; buck2i = buck2[typei]; rhoinvi = rhoinv[typei];
-    jneighn = (jneigh = listmiddle->firstneigh[i])+listmiddle->numneigh[i];
+    jneighn = (jneigh = list->firstneigh_middle[i])+list->numneigh_middle[i];
 
     for (; jneigh<jneighn; ++jneigh) {                        // loop over neighbors
       j = *jneigh;
       ni = sbmask(j);
       j &= NEIGHMASK;
 
-      { register const double *xj = x0+(j+(j<<1));
+      { const double *xj = x0+(j+(j<<1));
         d[0] = xi[0] - xj[0];                                // pair vector
         d[1] = xi[1] - xj[1];
         d[2] = xi[2] - xj[2]; }
@@ -954,7 +954,7 @@ void PairBuckLongCoulLongOMP::eval_middle(int iifrom, int iito, ThrData * const 
           qri*q[j]/r : qri*q[j]/r*special_coul[ni];
 
       if (rsq < cut_bucksqi[typej = type[j]]) {                // buckingham
-        register double rn = r2inv*r2inv*r2inv,
+        double rn = r2inv*r2inv*r2inv,
                         expr = exp(-r*rhoinvi[typej]);
         force_buck = ni == 0 ?
           (r*expr*buck1i[typej]-rn*buck2i[typej]) :
@@ -965,16 +965,16 @@ void PairBuckLongCoulLongOMP::eval_middle(int iifrom, int iito, ThrData * const 
       fpair = (force_coul + force_buck) * r2inv;
 
       if (rsq < cut_in_on_sq) {                                // switching
-        register double rsw = (sqrt(rsq) - cut_in_off)/cut_in_diff;
+        double rsw = (sqrt(rsq) - cut_in_off)/cut_in_diff;
         fpair  *= rsw*rsw*(3.0 - 2.0*rsw);
       }
       if (rsq > cut_out_on_sq) {
-        register double rsw = (sqrt(rsq) - cut_out_on)/cut_out_diff;
+        double rsw = (sqrt(rsq) - cut_out_on)/cut_out_diff;
         fpair  *= 1.0 + rsw*rsw*(2.0*rsw-3.0);
       }
 
       if (newton_pair || j < nlocal) {                        // force update
-        register double *fj = f0+(j+(j<<1)), f;
+        double *fj = f0+(j+(j<<1)), f;
         fi[0] += f = d[0]*fpair; fj[0] -= f;
         fi[1] += f = d[1]*fpair; fj[1] -= f;
         fi[2] += f = d[2]*fpair; fj[2] -= f;
@@ -1009,7 +1009,7 @@ void PairBuckLongCoulLongOMP::eval_outer(int iiform, int iito, ThrData * const t
   const double *x0 = x[0];
   double *f0 = f[0], *fi = f0;
 
-  int *ilist = listouter->ilist;
+  int *ilist = list->ilist;
 
   int i, j, ii;
   int *jneigh, *jneighn, typei, typej, ni, respa_flag;
@@ -1035,14 +1035,14 @@ void PairBuckLongCoulLongOMP::eval_outer(int iiform, int iito, ThrData * const t
     buckai = buck_a[typei]; buckci = buck_c[typei]; rhoinvi = rhoinv[typei];
     cutsqi = cutsq[typei]; cut_bucksqi = cut_bucksq[typei];
     memcpy(xi, x0+(i+(i<<1)), sizeof(vector));
-    jneighn = (jneigh = listouter->firstneigh[i])+listouter->numneigh[i];
+    jneighn = (jneigh = list->firstneigh[i])+list->numneigh[i];
 
     for (; jneigh<jneighn; ++jneigh) {                        // loop over neighbors
       j = *jneigh;
       ni = sbmask(j);
       j &= NEIGHMASK;
 
-      { register const double *xj = x0+(j+(j<<1));
+      { const double *xj = x0+(j+(j<<1));
         d[0] = xi[0] - xj[0];                                // pair vector
         d[1] = xi[1] - xj[1];
         d[2] = xi[2] - xj[2]; }
@@ -1056,36 +1056,36 @@ void PairBuckLongCoulLongOMP::eval_outer(int iiform, int iito, ThrData * const t
       respa_buck = 0.0;
       respa_flag = rsq < cut_in_on_sq ? 1 : 0;
       if (respa_flag && (rsq > cut_in_off_sq)) {
-        register double rsw = (r-cut_in_off)/cut_in_diff;
+        double rsw = (r-cut_in_off)/cut_in_diff;
         frespa = 1-rsw*rsw*(3.0-2.0*rsw);
       }
 
       if (ORDER1 && (rsq < cut_coulsq)) {                // coulombic
         if (!CTABLE || rsq <= tabinnersq) {        // series real space
-          register double s = qri*q[j];
+          double s = qri*q[j];
           if (respa_flag)                                // correct for respa
             respa_coul = ni == 0 ? frespa*s/r : frespa*s/r*special_coul[ni];
-          register double x = g_ewald*r, t = 1.0/(1.0+EWALD_P*x);
+          double x = g_ewald*r, t = 1.0/(1.0+EWALD_P*x);
           if (ni == 0) {
             s *= g_ewald*exp(-x*x);
             force_coul = (t *= ((((t*A5+A4)*t+A3)*t+A2)*t+A1)*s/x)+EWALD_F*s-respa_coul;
             if (EFLAG) ecoul = t;
           }
           else {                                        // correct for special
-            register double ri = s*(1.0-special_coul[ni])/r; s *= g_ewald*exp(-x*x);
+            double ri = s*(1.0-special_coul[ni])/r; s *= g_ewald*exp(-x*x);
             force_coul = (t *= ((((t*A5+A4)*t+A3)*t+A2)*t+A1)*s/x)+EWALD_F*s-ri-respa_coul;
             if (EFLAG) ecoul = t-ri;
           }
         }                                                // table real space
         else {
           if (respa_flag) {
-            register double s = qri*q[j];
+            double s = qri*q[j];
             respa_coul = ni == 0 ? frespa*s/r : frespa*s/r*special_coul[ni];
           }
-          register union_int_float_t t;
+          union_int_float_t t;
           t.f = rsq;
-          register const int k = (t.i & ncoulmask) >> ncoulshiftbits;
-          register double f = (rsq-rtable[k])*drtable[k], qiqj = qi*q[j];
+          const int k = (t.i & ncoulmask) >> ncoulshiftbits;
+          double f = (rsq-rtable[k])*drtable[k], qiqj = qi*q[j];
           if (ni == 0) {
             force_coul = qiqj*(ftable[k]+f*dftable[k]);
             if (EFLAG) ecoul = qiqj*(etable[k]+f*detable[k]);
@@ -1103,22 +1103,22 @@ void PairBuckLongCoulLongOMP::eval_outer(int iiform, int iito, ThrData * const t
       else force_coul = respa_coul = ecoul = 0.0;
 
       if (rsq < cut_bucksqi[typej]) {                        // buckingham
-        register double rn = r2inv*r2inv*r2inv,
+        double rn = r2inv*r2inv*r2inv,
                         expr = exp(-r*rhoinvi[typej]);
         if (respa_flag) respa_buck = ni == 0 ?                 // correct for respa
             frespa*(r*expr*buck1i[typej]-rn*buck2i[typej]) :
             frespa*(r*expr*buck1i[typej]-rn*buck2i[typej])*special_lj[ni];
         if (ORDER6) {                                        // long-range form
           if (!DISPTABLE || rsq <= tabinnerdispsq) {
-            register double x2 = g2*rsq, a2 = 1.0/x2;
+            double x2 = g2*rsq, a2 = 1.0/x2;
             x2 = a2*exp(-x2)*buckci[typej];
             if (ni == 0) {
               force_buck =
                 r*expr*buck1i[typej]-g8*(((6.0*a2+6.0)*a2+3.0)*a2+1.0)*x2*rsq-respa_buck;
               if (EFLAG) evdwl = expr*buckai[typej]-g6*((a2+1.0)*a2+0.5)*x2;
-	    }
+            }
             else {                                        // correct for special
-              register double f = special_lj[ni], t = rn*(1.0-f);
+              double f = special_lj[ni], t = rn*(1.0-f);
               force_buck = f*r*expr*buck1i[typej]-
                 g8*(((6.0*a2+6.0)*a2+3.0)*a2+1.0)*x2*rsq+t*buck2i[typej]-respa_buck;
               if (EFLAG) evdwl = f*expr*buckai[typej] -
@@ -1126,17 +1126,17 @@ void PairBuckLongCoulLongOMP::eval_outer(int iiform, int iito, ThrData * const t
             }
           }
           else {          // table real space
-            register union_int_float_t disp_t;
+            union_int_float_t disp_t;
             disp_t.f = rsq;
-            register const int disp_k = (disp_t.i & ndispmask)>>ndispshiftbits;
-            register double f_disp = (rsq-rdisptable[disp_k])*drdisptable[disp_k];
-            register double rn = r2inv*r2inv*r2inv;
+            const int disp_k = (disp_t.i & ndispmask)>>ndispshiftbits;
+            double f_disp = (rsq-rdisptable[disp_k])*drdisptable[disp_k];
+            double rn = r2inv*r2inv*r2inv;
             if (ni == 0) {
               force_buck = r*expr*buck1i[typej]-(fdisptable[disp_k]+f_disp*dfdisptable[disp_k])*buckci[typej]-respa_buck;
               if (EFLAG) evdwl =  expr*buckai[typej]-(edisptable[disp_k]+f_disp*dedisptable[disp_k])*buckci[typej];
             }
             else {                             //special case
-              register double f = special_lj[ni], t = rn*(1.0-f);
+              double f = special_lj[ni], t = rn*(1.0-f);
               force_buck = f*r*expr*buck1i[typej]-(fdisptable[disp_k]+f_disp*dfdisptable[disp_k])*buckci[typej]+t*buck2i[typej]-respa_buck;
               if (EFLAG) evdwl = f*expr*buckai[typej]-(edisptable[disp_k]+f_disp*dedisptable[disp_k])*buckci[typej]+t*buckci[typej];
             }
@@ -1149,7 +1149,7 @@ void PairBuckLongCoulLongOMP::eval_outer(int iiform, int iito, ThrData * const t
               evdwl = expr*buckai[typej]-rn*buckci[typej]-offseti[typej];
           }
           else {                                        // correct for special
-            register double f = special_lj[ni];
+            double f = special_lj[ni];
             force_buck = f*(r*expr*buck1i[typej]-rn*buck2i[typej])-respa_buck;
             if (EFLAG)
               evdwl = f*(expr*buckai[typej]-rn*buckci[typej]-offseti[typej]);
@@ -1161,7 +1161,7 @@ void PairBuckLongCoulLongOMP::eval_outer(int iiform, int iito, ThrData * const t
       fpair = (force_coul+force_buck)*r2inv;
 
       if (NEWTON_PAIR || j < nlocal) {
-        register double *fj = f0+(j+(j<<1)), f;
+        double *fj = f0+(j+(j<<1)), f;
         fi[0] += f = d[0]*fpair; fj[0] -= f;
         fi[1] += f = d[1]*fpair; fj[1] -= f;
         fi[2] += f = d[2]*fpair; fj[2] -= f;
@@ -1175,7 +1175,7 @@ void PairBuckLongCoulLongOMP::eval_outer(int iiform, int iito, ThrData * const t
       if (EVFLAG) {
         fvirial = (force_coul + force_buck + respa_coul + respa_buck)*r2inv;
         ev_tally_thr(this,i,j,nlocal,NEWTON_PAIR,
-		     evdwl,ecoul,fvirial,d[0],d[1],d[2],thr);
+                     evdwl,ecoul,fvirial,d[0],d[1],d[2],thr);
       }
     }
   }

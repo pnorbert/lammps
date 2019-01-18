@@ -14,7 +14,7 @@
 #ifndef LMP_GROUP_H
 #define LMP_GROUP_H
 
-#include <stdio.h>
+#include <cstdio>
 #include "pointers.h"
 #include <map>
 
@@ -37,6 +37,7 @@ class Group : protected Pointers {
   void write_restart(FILE *);
   void read_restart(FILE *);
 
+  bigint count_all();                      // count atoms in group all
   bigint count(int);                       // count atoms in group
   bigint count(int,int);                   // count atoms in group & region
   double mass(int);                        // total mass of atoms in group
@@ -70,11 +71,9 @@ class Group : protected Pointers {
   int find_unused();
   void add_molecules(int, int);
 
-  // static variable for ring communication callback to access class data
   // callback functions for ring communication
 
-  static Group *cptr;
-  static void molring(int, char *);
+  static void molring(int, char *, void *);
   int molbit;
 };
 
@@ -175,5 +174,9 @@ Self-explanatory.
 E: Group all cannot be made dynamic
 
 This operation is not allowed.
+
+E: Insufficient Jacobi rotations for group::omega
+
+UNDOCUMENTED
 
 */

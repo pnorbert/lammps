@@ -12,10 +12,11 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing author:  Axel Kohlmeyer (Temple U)
+   Contributing authors:  Axel Kohlmeyer (Temple U),
+                          Richard Berger (Temple U)
 ------------------------------------------------------------------------- */
 
-#include <string.h>
+#include <cstring>
 #include "info.h"
 #include "accelerator_kokkos.h"
 #include "atom.h"
@@ -27,6 +28,10 @@
 #include "force.h"
 #include "pair.h"
 #include "pair_hybrid.h"
+#include "bond.h"
+#include "angle.h"
+#include "dihedral.h"
+#include "improper.h"
 #include "group.h"
 #include "input.h"
 #include "modify.h"
@@ -38,12 +43,15 @@
 #include "update.h"
 #include "error.h"
 
-#include <time.h>
+#include <ctime>
+#include <map>
+#include <string>
+#include <algorithm>
 
 #ifdef _WIN32
-#define PSAPI_VERSION=1
+#define PSAPI_VERSION 1
 #include <windows.h>
-#include <stdint.h>
+#include <stdint.h> // <cstdint> requires C++-11
 #include <psapi.h>
 #else
 #include <sys/time.h>
@@ -67,10 +75,32 @@ enum {COMPUTES=1<<0,
       REGIONS=1<<4,
       CONFIG=1<<5,
       TIME=1<<6,
-      VARIABLES=1<<7,
-      SYSTEM=1<<8,
-      COMM=1<<9,
+      MEMORY=1<<7,
+      VARIABLES=1<<8,
+      SYSTEM=1<<9,
+      COMM=1<<10,
+      COEFFS=1<<11,
+      ATOM_STYLES=1<<12,
+      INTEGRATE_STYLES=1<<13,
+      MINIMIZE_STYLES=1<<14,
+      PAIR_STYLES=1<<15,
+      BOND_STYLES=1<<16,
+      ANGLE_STYLES=1<<17,
+      DIHEDRAL_STYLES=1<<18,
+      IMPROPER_STYLES=1<<19,
+      KSPACE_STYLES=1<<20,
+      FIX_STYLES=1<<21,
+      COMPUTE_STYLES=1<<22,
+      REGION_STYLES=1<<23,
+      DUMP_STYLES=1<<24,
+      COMMAND_STYLES=1<<25,
       ALL=~0};
+
+static const int STYLES = ATOM_STYLES | INTEGRATE_STYLES | MINIMIZE_STYLES
+                        | PAIR_STYLES | BOND_STYLES | ANGLE_STYLES
+                        | DIHEDRAL_STYLES | IMPROPER_STYLES | KSPACE_STYLES
+                        | FIX_STYLES | COMPUTE_STYLES | REGION_STYLES
+                        | DUMP_STYLES | COMMAND_STYLES;
 }
 
 static const char *varstyles[] = {
@@ -85,6 +115,10 @@ static const char *commlayout[] = { "uniform", "nonuniform", "irregular" };
 static const char bstyles[] = "pfsm";
 
 using namespace LAMMPS_NS;
+using namespace std;
+
+template<typename ValueType>
+static void print_columns(FILE* fp, map<string, ValueType> * styles);
 
 /* ---------------------------------------------------------------------- */
 
@@ -122,16 +156,16 @@ void Info::command(int narg, char **arg)
       if ((out != screen) && (out != logfile)) fclose(out);
       out = fopen(arg[idx+2],"w");
       idx += 3;
-    } else if (strncmp(arg[idx],"communication",4) == 0) {
+    } else if (strncmp(arg[idx],"communication",5) == 0) {
       flags |= COMM;
       ++idx;
-    } else if (strncmp(arg[idx],"computes",4) == 0) {
+    } else if (strncmp(arg[idx],"computes",5) == 0) {
       flags |= COMPUTES;
       ++idx;
-    } else if (strncmp(arg[idx],"dumps",3) == 0) {
+    } else if (strncmp(arg[idx],"dumps",5) == 0) {
       flags |= DUMPS;
       ++idx;
-    } else if (strncmp(arg[idx],"fixes",3) == 0) {
+    } else if (strncmp(arg[idx],"fixes",5) == 0) {
       flags |= FIXES;
       ++idx;
     } else if (strncmp(arg[idx],"groups",3) == 0) {
@@ -146,12 +180,73 @@ void Info::command(int narg, char **arg)
     } else if (strncmp(arg[idx],"time",3) == 0) {
       flags |= TIME;
       ++idx;
+    } else if (strncmp(arg[idx],"memory",3) == 0) {
+      flags |= MEMORY;
+      ++idx;
     } else if (strncmp(arg[idx],"variables",3) == 0) {
       flags |= VARIABLES;
       ++idx;
     } else if (strncmp(arg[idx],"system",3) == 0) {
       flags |= SYSTEM;
       ++idx;
+    } else if (strncmp(arg[idx],"coeffs",3) == 0) {
+      flags |= COEFFS;
+      ++idx;
+    } else if (strncmp(arg[idx],"styles",3) == 0) {
+      if (idx+1 < narg) {
+        ++idx;
+        if (strncmp(arg[idx],"all",3) == 0) {
+          flags |= STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"atom",3) == 0) {
+          flags |= ATOM_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"integrate",3) == 0) {
+          flags |= INTEGRATE_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"minimize",3) == 0) {
+          flags |= MINIMIZE_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"pair",3) == 0) {
+          flags |= PAIR_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"bond",3) == 0) {
+          flags |= BOND_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"angle",3) == 0) {
+          flags |= ANGLE_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"dihedral",3) == 0) {
+          flags |= DIHEDRAL_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"improper",3) == 0) {
+          flags |= IMPROPER_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"kspace",3) == 0) {
+          flags |= KSPACE_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"fix",3) == 0) {
+          flags |= FIX_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"compute",4) == 0) {
+          flags |= COMPUTE_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"region",3) == 0) {
+          flags |= REGION_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"dump",3) == 0) {
+          flags |= DUMP_STYLES;
+          ++idx;
+        } else if (strncmp(arg[idx],"command",4) == 0) {
+          flags |= COMMAND_STYLES;
+          ++idx;
+        } else {
+          flags |= STYLES;
+        }
+      } else {
+        flags |= STYLES;
+        ++idx;
+      }
     } else {
       error->warning(FLERR,"Ignoring unknown or incorrect info command flag");
       ++idx;
@@ -165,72 +260,87 @@ void Info::command(int narg, char **arg)
   fprintf(out,"Printed on %s\n",ctime(&now));
 
   if (flags & CONFIG) {
-
-    fprintf(out,"\nLAMMPS version: %s / %s\n",
+    fprintf(out,"\nLAMMPS version: %s / %s\n\n",
             universe->version, universe->num_ver);
+
+    char *infobuf = get_os_info();
+    fprintf(out,"OS information: %s\n\n",infobuf);
+    delete[] infobuf;
+
     fprintf(out,"sizeof(smallint): %3d-bit\n",(int)sizeof(smallint)*8);
     fprintf(out,"sizeof(imageint): %3d-bit\n",(int)sizeof(imageint)*8);
     fprintf(out,"sizeof(tagint):   %3d-bit\n",(int)sizeof(tagint)*8);
     fprintf(out,"sizeof(bigint):   %3d-bit\n",(int)sizeof(bigint)*8);
 
-#if defined(_WIN32)
-    DWORD fullversion,majorv,minorv,buildv=0;
+    infobuf = get_compiler_info();
+    fprintf(out,"\nCompiler: %s\n",infobuf);
+    delete[] infobuf;
 
-    fullversion = GetVersion();
-    majorv = (DWORD) (LOBYTE(LOWORD(fullversion)));
-    minorv = (DWORD) (HIBYTE(LOWORD(fullversion)));
-    if (fullversion < 0x80000000)
-      buildv = (DWORD) (HIWORD(fullversion));
+    fputs("\nActive compile time flags:\n\n",out);
+    if (has_gzip_support()) fputs("-DLAMMPS_GZIP\n",out);
+    if (has_png_support()) fputs("-DLAMMPS_PNG\n",out);
+    if (has_jpeg_support()) fputs("-DLAMMPS_JPEG\n",out);
+    if (has_ffmpeg_support()) fputs("-DLAMMPS_FFMPEG\n",out);
+    if (has_exceptions()) fputs("-DLAMMPS_EXCEPTIONS\n",out);
 
-    SYSTEM_INFO si;
-    GetSystemInfo(&si);
-
-    const char *machine;
-    switch (si.wProcessorArchitecture) {
-    case PROCESSOR_ARCHITECTURE_AMD64:
-      machine = (const char *) "x86_64";
-      break;
-    case PROCESSOR_ARCHITECTURE_ARM:
-      machine = (const char *) "arm";
-      break;
-    case PROCESSOR_ARCHITECTURE_IA64:
-      machine = (const char *) "ia64";
-      break;
-    case PROCESSOR_ARCHITECTURE_INTEL:
-      machine = (const char *) "i386";
-      break;
-    default:
-      machine = (const char *) "(unknown)";
-    }
-    fprintf(out,"\nOS information: Windows %d.%d (%d) on %s\n",
-            majorv,minorv,buildv,machine);
-#else
-    struct utsname ut;
-    uname(&ut);
-    fprintf(out,"\nOS information: %s %s on %s\n",
-            ut.sysname, ut.release, ut.machine);
+#if defined(LAMMPS_BIGBIG)
+    fputs("-DLAMMPS_BIGBIG\n",out);
+#elif defined(LAMMPS_SMALLBIG)
+    fputs("-DLAMMPS_SMALLBIG\n",out);
+#else // defined(LAMMPS_SMALLSMALL)
+    fputs("-DLAMMPS_SMALLSMALL\n",out);
 #endif
 
-    fprintf(out,"\nMemory allocation information (MPI rank 0)\n");
+    const char *pkg;
+    int ncword, ncline = 0;
+
+    fputs("\nInstalled packages:\n\n",out);
+    for (int i = 0; NULL != (pkg = lmp->installed_packages[i]); ++i) {
+      ncword = strlen(pkg);
+      if (ncline + ncword > 78) {
+        ncline = 0;
+        fputs("\n",out);
+      }
+      fprintf(out,"%s ",pkg);
+      ncline += ncword + 1;
+    }
+    fputs("\n",out);
+  }
+
+  if (flags & MEMORY) {
+
+    fprintf(out,"\nMemory allocation information (MPI rank 0):\n\n");
+
+    bigint bytes = 0;
+    bytes += atom->memory_usage();
+    bytes += neighbor->memory_usage();
+    bytes += comm->memory_usage();
+    bytes += update->memory_usage();
+    bytes += force->memory_usage();
+    bytes += modify->memory_usage();
+    for (int i = 0; i < output->ndump; i++)
+      bytes += output->dump[i]->memory_usage();
+    double mbytes = bytes/1024.0/1024.0;
+    fprintf(out,"Total dynamically allocated memory: %.4g Mbyte\n",mbytes);
 
 #if defined(_WIN32)
     HANDLE phandle = GetCurrentProcess();
     PROCESS_MEMORY_COUNTERS_EX pmc;
     GetProcessMemoryInfo(phandle,(PROCESS_MEMORY_COUNTERS *)&pmc,sizeof(pmc));
-    fprintf(out,"Non-shared memory use: %.3g Mbyte\n",
+    fprintf(out,"Non-shared memory use: %.4g Mbyte\n",
             (double)pmc.PrivateUsage/1048576.0);
-    fprintf(out,"Maximum working set size: %.3g Mbyte\n",
+    fprintf(out,"Maximum working set size: %.4g Mbyte\n",
             (double)pmc.PeakWorkingSetSize/1048576.0);
 #else
 #if defined(__linux)
     struct mallinfo mi;
     mi = mallinfo();
-    fprintf(out,"Total dynamically allocated memory: %.3g Mbyte\n",
-            (double)mi.uordblks/1048576.0);
+    fprintf(out,"Current reserved memory pool size: %.4g Mbyte\n",
+            (double)mi.uordblks/1048576.0+(double)mi.hblkhd/1048576.0);
 #endif
     struct rusage ru;
     if (getrusage(RUSAGE_SELF, &ru) == 0) {
-      fprintf(out,"Maximum resident set size: %.3g Mbyte\n",
+      fprintf(out,"Maximum resident set size: %.4g Mbyte\n",
               (double)ru.ru_maxrss/1024.0);
     }
 #endif
@@ -336,6 +446,69 @@ void Info::command(int narg, char **arg)
                   domain->xy, domain->xz, domain->yz);
     } else {
       fputs("\nBox has not yet been created\n",out);
+    }
+  }
+
+  if (domain->box_exist && (flags & COEFFS)) {
+    Pair *pair=force->pair;
+
+    fprintf(out,"\nCoeff information:\n");
+    if (pair) {
+      fprintf(out,"Pair Coeffs:\n");
+      for (int i=1; i <= atom->ntypes; ++i)
+        for (int j=i; j <= atom->ntypes; ++j) {
+          fprintf(out,"%3d %3d :",i,j);
+          if (pair->allocated && pair->setflag[i][j]) fputs(" is set\n",out);
+          else fputs (" is not set\n",out);
+        }
+    }
+    if (force->bond) {
+      Bond *bond=force->bond;
+
+      if (bond) {
+        fprintf(out,"Bond Coeffs:\n");
+        for (int i=1; i <= atom->nbondtypes; ++i) {
+          fprintf(out,"%3d :",i);
+          if (bond->allocated && bond->setflag[i]) fputs(" is set\n",out);
+          else fputs (" is not set\n",out);
+        }
+      }
+    }
+    if (force->angle) {
+      Angle *angle=force->angle;
+
+      if (angle) {
+        fprintf(out,"Angle Coeffs:\n");
+        for (int i=1; i <= atom->nangletypes; ++i) {
+          fprintf(out,"%3d :",i);
+          if (angle->allocated && angle->setflag[i]) fputs(" is set\n",out);
+          else fputs (" is not set\n",out);
+        }
+      }
+    }
+    if (force->dihedral) {
+      Dihedral *dihedral=force->dihedral;
+
+      if (dihedral) {
+        fprintf(out,"Dihedral Coeffs:\n");
+        for (int i=1; i <= atom->ndihedraltypes; ++i) {
+          fprintf(out,"%3d :",i);
+          if (dihedral->allocated && dihedral->setflag[i]) fputs(" is set\n",out);
+          else fputs (" is not set\n",out);
+        }
+      }
+    }
+    if (force->improper) {
+      Improper *b=force->improper;
+
+      if (b) {
+        fprintf(out,"Improper Coeffs:\n");
+        for (int i=1; i <= atom->nimpropertypes; ++i) {
+          fprintf(out,"%3d :",i);
+          if (b->allocated && b->setflag[i]) fputs(" is set\n",out);
+          else fputs (" is not set\n",out);
+        }
+      }
     }
   }
 
@@ -457,12 +630,137 @@ void Info::command(int narg, char **arg)
             cpuh,cpum,cpus,wallh,wallm,walls);
   }
 
+  if (flags & STYLES) {
+    available_styles(out, flags);
+  }
+
   fputs("\nInfo-Info-Info-Info-Info-Info-Info-Info-Info-Info-Info\n\n",out);
 
   // close output file pointer if opened locally thus forcing a hard sync.
   if ((out != screen) && (out != logfile))
     fclose(out);
 }
+
+
+void Info::available_styles(FILE * out, int flags)
+{
+
+  fprintf(out,"\nStyles information:\n");
+
+  if(flags & ATOM_STYLES)      atom_styles(out);
+  if(flags & INTEGRATE_STYLES) integrate_styles(out);
+  if(flags & MINIMIZE_STYLES)  minimize_styles(out);
+  if(flags & PAIR_STYLES)      pair_styles(out);
+  if(flags & BOND_STYLES)      bond_styles(out);
+  if(flags & ANGLE_STYLES)     angle_styles(out);
+  if(flags & DIHEDRAL_STYLES)  dihedral_styles(out);
+  if(flags & IMPROPER_STYLES)  improper_styles(out);
+  if(flags & KSPACE_STYLES)    kspace_styles(out);
+  if(flags & FIX_STYLES)       fix_styles(out);
+  if(flags & COMPUTE_STYLES)   compute_styles(out);
+  if(flags & REGION_STYLES)    region_styles(out);
+  if(flags & DUMP_STYLES)      dump_styles(out);
+  if(flags & COMMAND_STYLES)   command_styles(out);
+}
+
+void Info::atom_styles(FILE * out)
+{
+  fprintf(out, "\nAtom styles:\n");
+  print_columns(out, atom->avec_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::integrate_styles(FILE * out)
+{
+  fprintf(out, "\nIntegrate styles:\n");
+  print_columns(out, update->integrate_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::minimize_styles(FILE * out)
+{
+  fprintf(out, "\nMinimize styles:\n");
+  print_columns(out, update->minimize_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::pair_styles(FILE * out)
+{
+  fprintf(out, "\nPair styles:\n");
+  print_columns(out, force->pair_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::bond_styles(FILE * out)
+{
+  fprintf(out, "\nBond styles:\n");
+  print_columns(out, force->bond_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::angle_styles(FILE * out)
+{
+  fprintf(out, "\nAngle styles:\n");
+  print_columns(out, force->angle_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::dihedral_styles(FILE * out)
+{
+  fprintf(out, "\nDihedral styles:\n");
+  print_columns(out, force->dihedral_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::improper_styles(FILE * out)
+{
+  fprintf(out, "\nImproper styles:\n");
+  print_columns(out, force->improper_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::kspace_styles(FILE * out)
+{
+  fprintf(out, "\nKSpace styles:\n");
+  print_columns(out, force->kspace_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::fix_styles(FILE * out)
+{
+  fprintf(out, "\nFix styles:\n");
+  print_columns(out, modify->fix_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::compute_styles(FILE * out)
+{
+  fprintf(out, "\nCompute styles:\n");
+  print_columns(out, modify->compute_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::region_styles(FILE * out)
+{
+  fprintf(out, "\nRegion styles:\n");
+  print_columns(out, domain->region_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::dump_styles(FILE * out)
+{
+  fprintf(out, "\nDump styles:\n");
+  print_columns(out, output->dump_map);
+  fprintf(out, "\n\n\n");
+}
+
+void Info::command_styles(FILE * out)
+{
+  fprintf(out, "\nCommand styles (add-on input script commands):\n");
+  print_columns(out, input->command_map);
+  fprintf(out, "\n\n\n");
+}
+
 
 /* ---------------------------------------------------------------------- */
 
@@ -619,6 +917,18 @@ bool Info::is_available(const char *category, const char *name)
         delete[] name_w_suffix;
       }
     }
+  } else if (strcmp(category,"feature") == 0) {
+    if (strcmp(name,"gzip") == 0) {
+      return has_gzip_support();
+    } else if (strcmp(name,"png") == 0) {
+      return has_png_support();
+    } else if (strcmp(name,"jpeg") == 0) {
+      return has_jpeg_support();
+    } else if (strcmp(name,"ffmpeg") == 0) {
+      return has_ffmpeg_support();
+    } else if (strcmp(name,"exceptions") == 0) {
+      return has_exceptions();
+    }
   } else error->all(FLERR,"Unknown category for info is_available()");
 
   return match ? true : false;
@@ -680,4 +990,163 @@ bool Info::is_defined(const char *category, const char *name)
   } else error->all(FLERR,"Unknown category for info is_defined()");
 
   return false;
+}
+
+template<typename ValueType>
+static void print_columns(FILE* fp, map<string, ValueType> * styles)
+{
+  if (styles->empty()) {
+    fprintf(fp, "\nNone");
+    return;
+  }
+
+  // std::map keys are already sorted
+  int pos = 80;
+  for(typename map<string, ValueType>::iterator it = styles->begin(); it != styles->end(); ++it) {
+    const string & style_name = it->first;
+
+    // skip "secret" styles
+    if (isupper(style_name[0])) continue;
+
+    int len = style_name.length();
+    if (pos + len > 80) {
+      fprintf(fp,"\n");
+      pos = 0;
+    }
+
+    if (len < 16) {
+      fprintf(fp,"%-16s", style_name.c_str());
+      pos += 16;
+    } else if (len < 32) {
+      fprintf(fp,"%-32s", style_name.c_str());
+      pos += 32;
+    } else if (len < 48) {
+      fprintf(fp,"%-48s", style_name.c_str());
+      pos += 48;
+    } else if (len < 64) {
+      fprintf(fp,"%-64s", style_name.c_str());
+      pos += 64;
+    } else {
+      fprintf(fp,"%-80s", style_name.c_str());
+      pos += 80;
+    }
+  }
+}
+
+bool Info::has_gzip_support() {
+#ifdef LAMMPS_GZIP
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool Info::has_png_support() {
+#ifdef LAMMPS_PNG
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool Info::has_jpeg_support() {
+#ifdef LAMMPS_JPEG
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool Info::has_ffmpeg_support() {
+#ifdef LAMMPS_FFMPEG
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool Info::has_exceptions() {
+#ifdef LAMMPS_EXCEPTIONS
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool Info::has_package(const char * package_name) {
+  for(int i = 0; LAMMPS::installed_packages[i] != NULL; ++i) {
+    if(strcmp(package_name, LAMMPS::installed_packages[i]) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/* ---------------------------------------------------------------------- */
+#define _INFOBUF_SIZE 256
+
+char *Info::get_os_info()
+{
+  char *buf = new char[_INFOBUF_SIZE];
+
+#if defined(_WIN32)
+  DWORD fullversion,majorv,minorv,buildv=0;
+
+  fullversion = GetVersion();
+  majorv = (DWORD) (LOBYTE(LOWORD(fullversion)));
+  minorv = (DWORD) (HIBYTE(LOWORD(fullversion)));
+  if (fullversion < 0x80000000)
+    buildv = (DWORD) (HIWORD(fullversion));
+
+  SYSTEM_INFO si;
+  GetSystemInfo(&si);
+
+  const char *machine;
+  switch (si.wProcessorArchitecture) {
+  case PROCESSOR_ARCHITECTURE_AMD64:
+    machine = (const char *) "x86_64";
+    break;
+  case PROCESSOR_ARCHITECTURE_ARM:
+    machine = (const char *) "arm";
+    break;
+  case PROCESSOR_ARCHITECTURE_IA64:
+    machine = (const char *) "ia64";
+    break;
+  case PROCESSOR_ARCHITECTURE_INTEL:
+    machine = (const char *) "i386";
+    break;
+  default:
+    machine = (const char *) "(unknown)";
+  }
+  snprintf(buf,_INFOBUF_SIZE,"Windows %d.%d (%d) on %s",
+           majorv,minorv,buildv,machine);
+#else
+  struct utsname ut;
+  uname(&ut);
+  snprintf(buf,_INFOBUF_SIZE,"%s %s on %s",
+           ut.sysname, ut.release, ut.machine);
+#endif
+  return buf;
+}
+
+char *Info::get_compiler_info()
+{
+  char *buf = new char[_INFOBUF_SIZE];
+#if __clang__
+  snprintf(buf,_INFOBUF_SIZE,"Clang C++ %s", __VERSION__);
+#elif __INTEL_COMPILER
+  snprintf(buf,_INFOBUF_SIZE,"Intel C++ %s", __VERSION__);
+#elif __GNUC__
+  snprintf(buf,_INFOBUF_SIZE,"GNU C++ %s",   __VERSION__);
+#else
+  snprintf(buf,_INFOBUF_SIZE,"(Unknown)");
+#endif
+  return buf;
+}
+
+/* ---------------------------------------------------------------------- */
+
+char **Info::get_variable_names(int &num) {
+    num = input->variable->nvar;
+    return input->variable->names;
 }

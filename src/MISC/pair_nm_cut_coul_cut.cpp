@@ -15,10 +15,10 @@
    Contributing Author: Julien Devemy (ICCF)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_nm_cut_coul_cut.h"
 #include "atom.h"
 #include "comm.h"
@@ -213,7 +213,7 @@ void PairNMCutCoulCut::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
+      for (j = i; j <= atom->ntypes; j++)
         if (setflag[i][j]) {
           cut_lj[i][j] = cut_lj_global;
           cut_coul[i][j] = cut_coul_global;
@@ -232,8 +232,8 @@ void PairNMCutCoulCut::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double e0_one = force->numeric(FLERR,arg[2]);
   double r0_one = force->numeric(FLERR,arg[3]);
@@ -291,7 +291,7 @@ double PairNMCutCoulCut::init_one(int i, int j)
   r0n[i][j] = pow(r0[i][j],nn[i][j]);
   r0m[i][j] = pow(r0[i][j],mm[i][j]);
 
-  if (offset_flag) {
+  if (offset_flag && (cut_lj[i][j] > 0.0)) {
     offset[i][j] = e0nm[i][j] *
       ((mm[i][j]*r0n[i][j] / pow(cut_lj[i][j],nn[i][j])) -
        (nn[i][j]*r0m[i][j] / pow(cut_lj[i][j],mm[i][j])));
@@ -324,18 +324,11 @@ double PairNMCutCoulCut::init_one(int i, int j)
     }
     MPI_Allreduce(count,all,2,MPI_DOUBLE,MPI_SUM,world);
 
-    double rr1 = mm[i][j]*(nn[i][j]-1)*pow(r0[i][j],nn[i][j]);
-    double rr2 = nn[i][j]*(mm[i][j]-1)*pow(r0[i][j],mm[i][j]);
-    double p1 = 1-nn[i][j];
-    double p2 = 1-mm[i][j];
-
-    double rrr1 = pow(r0[i][j],nn[i][j])*(1-nn[i][j]);
-    double rrr2 = pow(r0[i][j],mm[i][j])*(1-mm[i][j]);
-
-    etail_ij = 2.0*MY_PI*all[0]*all[1]*e0nm[i][j] *
-      (rr1*pow(cut_lj[i][j],p1)-rr2*pow(cut_lj[i][j],p2));
-    ptail_ij = 2.0*MY_PI*all[0]*all[1]*e0nm[i][j] *
-      nn[i][j]*mm[i][j]*(rrr1*pow(cut_lj[i][j],p1)-rrr2*pow(cut_lj[i][j],p2));
+    double cut_lj3 = cut_lj[i][j]*cut_lj[i][j]*cut_lj[i][j];
+    ptail_ij = 2.*MY_PI/3.*all[0]*all[1]*e0nm[i][j]*nm[i][j]*cut_lj3 *
+      (pow(r0[i][j]/cut_lj[i][j],nn[i][j])/(nn[i][j]-3) - pow(r0[i][j]/cut_lj[i][j],mm[i][j])/(mm[i][j]-3));
+    etail_ij = 2.*MY_PI*all[0]*all[1]*e0nm[i][j]*cut_lj3 *
+      (mm[i][j]*pow(r0[i][j]/cut_lj[i][j],nn[i][j])/(nn[i][j]-3) - nn[i][j]*pow(r0[i][j]/cut_lj[i][j],mm[i][j])/(mm[i][j]-3));
 
   }
 

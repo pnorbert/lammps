@@ -15,6 +15,8 @@
    Contributing author: Axel Kohlmeyer (Temple U)
 ------------------------------------------------------------------------- */
 
+#include <cstring>
+#include <cmath>
 #include "pppm_omp.h"
 #include "atom.h"
 #include "comm.h"
@@ -25,9 +27,6 @@
 #include "memory.h"
 #include "math_const.h"
 #include "math_special.h"
-
-#include <string.h>
-#include <math.h>
 
 #include "suffix.h"
 using namespace LAMMPS_NS;
@@ -44,8 +43,7 @@ using namespace MathSpecial;
 
 /* ---------------------------------------------------------------------- */
 
-PPPMOMP::PPPMOMP(LAMMPS *lmp, int narg, char **arg) :
-  PPPM(lmp, narg, arg), ThrOMP(lmp, THR_KSPACE)
+PPPMOMP::PPPMOMP(LAMMPS *lmp) : PPPM(lmp), ThrOMP(lmp, THR_KSPACE)
 {
   triclinic_support = 0;
   suffix_flag |= Suffix::OMP;
@@ -74,13 +72,11 @@ void PPPMOMP::allocate()
 }
 
 /* ----------------------------------------------------------------------
-   free memory that depends on # of K-vectors and order
+   clean up per-thread allocations
 ------------------------------------------------------------------------- */
 
-void PPPMOMP::deallocate()
+PPPMOMP::~PPPMOMP()
 {
-  PPPM::deallocate();
-
 #if defined(_OPENMP)
 #pragma omp parallel default(none)
 #endif
@@ -720,7 +716,7 @@ void PPPMOMP::compute_rho1d_thr(FFT_SCALAR * const * const r1d, const FFT_SCALAR
 ------------------------------------------------------------------------- */
 
 void PPPMOMP::compute_drho1d_thr(FFT_SCALAR * const * const d1d, const FFT_SCALAR &dx,
-			      const FFT_SCALAR &dy, const FFT_SCALAR &dz)
+                              const FFT_SCALAR &dy, const FFT_SCALAR &dz)
 {
   int k,l;
   FFT_SCALAR r1,r2,r3;

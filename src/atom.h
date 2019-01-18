@@ -15,6 +15,8 @@
 #define LMP_ATOM_H
 
 #include "pointers.h"
+#include <map>
+#include <string>
 
 namespace LAMMPS_NS {
 
@@ -59,6 +61,11 @@ class Atom : protected Pointers {
   double *radius,*rmass;
   int *ellipsoid,*line,*tri,*body;
 
+  // SPIN package
+
+  double **sp;
+  double **fm;
+
   // PERI package
 
   double *vfrac,*s0;
@@ -91,11 +98,17 @@ class Atom : protected Pointers {
   double *duChem;
   double *dpdTheta;
   int nspecies_dpd;
-  int *ssaAIR; // Shardlow Splitting Algorithm Active Interaction Region number
+
+  // USER-MESO package
+
+  double **cc, **cc_flux;        // cc = chemical concentration
+  double *edpd_temp,*edpd_flux;  // temperature and heat flux
+  double *edpd_cv;               // heat capacity
+  int cc_species;
 
   // molecular info
 
-  int **nspecial;               // 0,1,2 = cummulative # of 1-2,1-3,1-4 neighs
+  int **nspecial;               // 0,1,2 = cumulative # of 1-2,1-3,1-4 neighs
   tagint **special;             // IDs of 1-2,1-3,1-4 neighs of each atom
   int maxspecial;               // special[nlocal][maxspecial]
 
@@ -122,11 +135,6 @@ class Atom : protected Pointers {
   char **iname,**dname;
   int nivector,ndvector;
 
-  // used by USER-CUDA to flag used per-atom arrays
-
-  unsigned int datamask;
-  unsigned int datamask_ext;
-
   // atom style and per-atom array existence flags
   // customize by adding new flag
 
@@ -141,7 +149,11 @@ class Atom : protected Pointers {
   int vfrac_flag,spin_flag,eradius_flag,ervel_flag,erforce_flag;
   int cs_flag,csforce_flag,vforce_flag,ervelforce_flag,etag_flag;
   int rho_flag,e_flag,cv_flag,vest_flag;
-  int dpd_flag;
+  int dpd_flag,edpd_flag,tdpd_flag;
+
+  //USER-SPIN package
+
+  int sp_flag;
 
   // USER-SMD package
 
@@ -184,7 +196,8 @@ class Atom : protected Pointers {
   int nextra_store;
 
   int map_style;                  // style of atom map: 0=none, 1=array, 2=hash
-  int map_user;                   // user selected style = same 0,1,2
+  int map_user;                   // user requested map style:
+                                  // 0 = no request, 1=array, 2=hash, 3=yes
   tagint map_tag_max;             // max atom ID that map() is setup for
 
   // spatial sorting of atoms
@@ -196,6 +209,12 @@ class Atom : protected Pointers {
   // indices of atoms with same ID
 
   int *sametag;      // sametag[I] = next atom with same ID, -1 if no more
+
+  // AtomVec factory types and map
+
+  typedef AtomVec *(*AtomVecCreator)(LAMMPS *);
+  typedef std::map<std::string,AtomVecCreator> AtomVecCreatorMap;
+  AtomVecCreatorMap *avec_map;
 
   // functions
 
@@ -220,23 +239,22 @@ class Atom : protected Pointers {
 
   void deallocate_topology();
 
-  void data_atoms(int, char *, tagint, int, int, double *);
+  void data_atoms(int, char *, tagint, tagint, int, int, double *);
   void data_vels(int, char *, tagint);
-
   void data_bonds(int, char *, int *, tagint, int);
   void data_angles(int, char *, int *, tagint, int);
   void data_dihedrals(int, char *, int *, tagint, int);
   void data_impropers(int, char *, int *, tagint, int);
-
   void data_bonus(int, char *, class AtomVec *, tagint);
   void data_bodies(int, char *, class AtomVecBody *, tagint);
+  void data_fix_compute_variable(int, int);
 
   virtual void allocate_type_arrays();
-  void set_mass(const char *, int);
-  void set_mass(int, double);
-  void set_mass(int, char **);
+  void set_mass(const char *, int, const char *, int);
+  void set_mass(const char *, int, int, double);
+  void set_mass(const char *, int, int, char **);
   void set_mass(double *);
-  void check_mass();
+  void check_mass(const char *, int);
 
   int radius_consistency(int, double &);
   int shape_consistency(int, double &, double &, double &);
@@ -252,9 +270,9 @@ class Atom : protected Pointers {
   void delete_callback(const char *, int);
   void update_callback(int);
 
-  int find_custom(char *, int &);
-  int add_custom(char *, int);
-  void remove_custom(int, int);
+  int find_custom(const char *, int &);
+  virtual int add_custom(const char *, int);
+  virtual void remove_custom(int, int);
 
   virtual void sync_modify(ExecutionSpace, unsigned int, unsigned int) {}
 
@@ -322,6 +340,9 @@ class Atom : protected Pointers {
 
   void setup_sort_bins();
   int next_prime(int);
+
+ private:
+  template <typename T> static AtomVec *avec_creator(LAMMPS *);
 };
 
 }
@@ -466,31 +487,6 @@ E: Invalid atom ID in Bodies section of data file
 Atom IDs must be positive integers and within range of defined
 atoms.
 
-E: Cannot set mass for this atom style
-
-This atom style does not support mass settings for each atom type.
-Instead they are defined on a per-atom basis in the data file.
-
-E: Invalid mass line in data file
-
-Self-explanatory.
-
-E: Invalid type for mass set
-
-Mass command must set a type from 1-N where N is the number of atom
-types.
-
-E: Invalid mass value
-
-Self-explanatory.
-
-E: All masses are not set
-
-For atom styles that define masses for each atom type, all masses must
-be set in the data file or by the mass command before running a
-simulation.  They must also be set before using the velocity
-command.
-
 E: Reuse of molecule template ID
 
 The template IDs must be unique.
@@ -500,15 +496,34 @@ E: Atom sort did not operate correctly
 This is an internal LAMMPS error.  Please report it to the
 developers.
 
-E: Atom sorting has bin size = 0.0
-
-The neighbor cutoff is being used as the bin size, but it is zero.
-Thus you must explicitly list a bin size in the atom_modify sort
-command or turn off sorting.
-
 E: Too many atom sorting bins
 
 This is likely due to an immense simulation box that has blown up
 to a large size.
+
+U: Cannot set mass for this atom style
+
+This atom style does not support mass settings for each atom type.
+Instead they are defined on a per-atom basis in the data file.
+
+U: Invalid mass line in data file
+
+Self-explanatory.
+
+U: Invalid type for mass set
+
+Mass command must set a type from 1-N where N is the number of atom
+types.
+
+U: Invalid mass value
+
+Self-explanatory.
+
+U: All masses are not set
+
+For atom styles that define masses for each atom type, all masses must
+be set in the data file or by the mass command before running a
+simulation.  They must also be set before using the velocity
+command.
 
 */

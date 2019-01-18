@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -16,7 +16,8 @@ ID, group-ID are documented in "fix"_fix.html command :ulb,l
 temp/berendsen = style name of this fix command :l
 Tstart,Tstop = desired temperature at start/end of run :l
   Tstart can be a variable (see below) :pre
-Tdamp = temperature damping parameter (time units) :l,ule
+Tdamp = temperature damping parameter (time units) :l
+:ule
 
 [Examples:]
 
@@ -25,7 +26,7 @@ fix 1 all temp/berendsen 300.0 300.0 100.0 :pre
 [Description:]
 
 Reset the temperature of a group of atoms by using a Berendsen
-thermostat "(Berendsen)"_#Berendsen, which rescales their velocities
+thermostat "(Berendsen)"_#Berendsen2, which rescales their velocities
 every timestep.
 
 The thermostat is applied to only the translational degrees of freedom
@@ -48,6 +49,10 @@ variable, it should be specified as v_name, where name is the variable
 name.  In this case, the variable will be evaluated each timestep, and
 its value used to determine the target temperature.
 
+NOTE: This thermostat will generate an error if the current
+temperature is zero at the end of a timestep.  It cannot rescale a
+zero temperature.
+
 Equal-style variables can specify formulas with various mathematical
 functions, and include "thermo_style"_thermo_style.html command
 keywords for the simulation box parameters and timestep and elapsed
@@ -63,8 +68,8 @@ be used on atoms that also have their temperature controlled by
 another fix - e.g. by "fix nvt"_fix_nh.html or "fix
 langevin"_fix_langevin.html commands.
 
-See "this howto section"_Section_howto.html#howto_16 of the manual for
-a discussion of different ways to compute temperature and perform
+See the "Howto thermostat"_Howto_thermostat.html doc page for a
+discussion of different ways to compute temperature and perform
 thermostatting.
 
 This fix computes a temperature each timestep.  To do this, the fix
@@ -121,9 +126,9 @@ system's potential energy as part of "thermodynamic
 output"_thermo_style.html.
 
 This fix computes a global scalar which can be accessed by various
-"output commands"_Section_howto.html#howto_15.  The scalar is the
-cummulative energy change due to this fix.  The scalar value
-calculated by this fix is "extensive".
+"output commands"_Howto_output.html.  The scalar is the cumulative
+energy change due to this fix.  The scalar value calculated by this
+fix is "extensive".
 
 This fix can ramp its target temperature over multiple runs, using the
 {start} and {stop} keywords of the "run"_run.html command.  See the
@@ -152,7 +157,7 @@ temp/rescale"_fix_temp_rescale.html, "fix langevin"_fix_langevin.html,
 
 :line
 
-:link(Berendsen)
+:link(Berendsen2)
 
 [(Berendsen)] Berendsen, Postma, van Gunsteren, DiNola, Haak, J Chem
 Phys, 81, 3684 (1984).

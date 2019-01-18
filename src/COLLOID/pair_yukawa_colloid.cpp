@@ -15,8 +15,8 @@
    Contributing authors: Randy Schunk (Sandia)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "pair_yukawa_colloid.h"
 #include "atom.h"
 #include "atom_vec.h"
@@ -147,7 +147,7 @@ double PairYukawaColloid::init_one(int i, int j)
     cut[i][j] = mix_distance(cut[i][i],cut[j][j]);
   }
 
-  if (offset_flag) {
+  if (offset_flag && (kappa != 0.0)) {
     double screening = exp(-kappa * (cut[i][j] - (rad[i]+rad[j])));
     offset[i][j] = a[i][j]/kappa * screening;
   } else offset[i][j] = 0.0;
@@ -160,9 +160,9 @@ double PairYukawaColloid::init_one(int i, int j)
 
 /* ---------------------------------------------------------------------- */
 
-double PairYukawaColloid::single(int i, int j, int itype, int jtype,
+double PairYukawaColloid::single(int /*i*/, int /*j*/, int itype, int jtype,
                                  double rsq,
-                                 double factor_coul, double factor_lj,
+                                 double /*factor_coul*/, double factor_lj,
                                  double &fforce)
 {
   double r,rinv,screening,forceyukawa,phi;

@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "fix_bond_swap.h"
 #include "atom.h"
 #include "force.h"
@@ -52,7 +52,9 @@ static const char cite_fix_bond_swap[] =
 /* ---------------------------------------------------------------------- */
 
 FixBondSwap::FixBondSwap(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  tflag(0), alist(NULL), id_temp(NULL), type(NULL), x(NULL), list(NULL),
+  temperature(NULL), random(NULL)
 {
   if (lmp->citeme) lmp->citeme->add(cite_fix_bond_swap);
 
@@ -180,7 +182,7 @@ void FixBondSwap::init()
 
 /* ---------------------------------------------------------------------- */
 
-void FixBondSwap::init_list(int id, NeighList *ptr)
+void FixBondSwap::init_list(int /*id*/, NeighList *ptr)
 {
   list = ptr;
 }

@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "fix_viscous.h"
 #include "atom.h"
 #include "update.h"
@@ -27,8 +27,11 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixViscous::FixViscous(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  gamma(NULL)
 {
+  dynamic_group_allow = 1;
+
   if (narg < 4) error->all(FLERR,"Illegal fix viscous command");
 
   double gamma_one = force->numeric(FLERR,arg[3]);
@@ -106,7 +109,7 @@ void FixViscous::min_setup(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixViscous::post_force(int vflag)
+void FixViscous::post_force(int /*vflag*/)
 {
   // apply drag force to atoms in group
   // direction is opposed to velocity vector
@@ -131,7 +134,7 @@ void FixViscous::post_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixViscous::post_force_respa(int vflag, int ilevel, int iloop)
+void FixViscous::post_force_respa(int vflag, int ilevel, int /*iloop*/)
 {
   if (ilevel == ilevel_respa) post_force(vflag);
 }

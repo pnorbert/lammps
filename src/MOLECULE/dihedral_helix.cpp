@@ -17,8 +17,8 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "dihedral_helix.h"
 #include "atom.h"
 #include "neighbor.h"
@@ -284,7 +284,7 @@ void DihedralHelix::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->ndihedraltypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->ndihedraltypes,ilo,ihi);
 
   double aphi_one = force->numeric(FLERR,arg[1]);
   double bphi_one = force->numeric(FLERR,arg[2]);
@@ -331,4 +331,14 @@ void DihedralHelix::read_restart(FILE *fp)
   MPI_Bcast(&cphi[1],atom->ndihedraltypes,MPI_DOUBLE,0,world);
 
   for (int i = 1; i <= atom->ndihedraltypes; i++) setflag[i] = 1;
+}
+
+/* ----------------------------------------------------------------------
+   proc 0 writes to data file
+------------------------------------------------------------------------- */
+
+void DihedralHelix::write_data(FILE *fp)
+{
+  for (int i = 1; i <= atom->ndihedraltypes; i++)
+    fprintf(fp,"%d %g %g %g\n",i,aphi[i],bphi[i],cphi[i]);
 }

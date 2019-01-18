@@ -12,8 +12,8 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "comm.h"
 #include "universe.h"
 #include "atom.h"
@@ -40,11 +40,8 @@ using namespace LAMMPS_NS;
 
 #define BUFMIN 1000             // also in comm styles
 
-enum{SINGLE,MULTI};             // same as in Comm sub-styles
-enum{MULTIPLE};                   // same as in ProcMap
 enum{ONELEVEL,TWOLEVEL,NUMA,CUSTOM};
 enum{CART,CARTREORDER,XYZ};
-enum{LAYOUT_UNIFORM,LAYOUT_NONUNIFORM,LAYOUT_TILED};    // several files
 
 /* ---------------------------------------------------------------------- */
 
@@ -87,7 +84,7 @@ Comm::Comm(LAMMPS *lmp) : Pointers(lmp)
   } else if (getenv("OMP_NUM_THREADS") == NULL) {
     nthreads = 1;
     if (me == 0)
-      error->warning(FLERR,"OMP_NUM_THREADS environment is not set. "
+      error->message(FLERR,"OMP_NUM_THREADS environment is not set. "
                            "Defaulting to 1 thread.");
   } else {
     nthreads = omp_get_max_threads();
@@ -244,14 +241,14 @@ void Comm::modify_params(int narg, char **arg)
       if (iarg+2 > narg) error->all(FLERR,"Illegal comm_modify command");
       if (strcmp(arg[iarg+1],"single") == 0) {
         // need to reset cutghostuser when switching comm mode
-        if (mode == MULTI) cutghostuser = 0.0;
+        if (mode == Comm::MULTI) cutghostuser = 0.0;
         memory->destroy(cutusermulti);
         cutusermulti = NULL;
-        mode = SINGLE;
+        mode = Comm::SINGLE;
       } else if (strcmp(arg[iarg+1],"multi") == 0) {
         // need to reset cutghostuser when switching comm mode
-        if (mode == SINGLE) cutghostuser = 0.0;
-        mode = MULTI;
+        if (mode == Comm::SINGLE) cutghostuser = 0.0;
+        mode = Comm::MULTI;
       } else error->all(FLERR,"Illegal comm_modify command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"group") == 0) {
@@ -265,8 +262,9 @@ void Comm::modify_params(int narg, char **arg)
       iarg += 2;
     } else if (strcmp(arg[iarg],"cutoff") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal comm_modify command");
-      if (mode == MULTI)
-        error->all(FLERR,"Use cutoff/multi keyword to set cutoff in multi mode");
+      if (mode == Comm::MULTI)
+        error->all(FLERR,
+                   "Use cutoff/multi keyword to set cutoff in multi mode");
       cutghostuser = force->numeric(FLERR,arg[iarg+1]);
       if (cutghostuser < 0.0)
         error->all(FLERR,"Invalid cutoff in comm_modify command");
@@ -274,7 +272,7 @@ void Comm::modify_params(int narg, char **arg)
     } else if (strcmp(arg[iarg],"cutoff/multi") == 0) {
       int i,nlo,nhi;
       double cut;
-      if (mode == SINGLE)
+      if (mode == Comm::SINGLE)
         error->all(FLERR,"Use cutoff keyword to set cutoff in single mode");
       if (domain->box_exist == 0)
         error->all(FLERR,
@@ -287,7 +285,7 @@ void Comm::modify_params(int narg, char **arg)
         for (i=0; i < ntypes+1; ++i)
           cutusermulti[i] = -1.0;
       }
-      force->bounds(arg[iarg+1],ntypes,nlo,nhi,1);
+      force->bounds(FLERR,arg[iarg+1],ntypes,nlo,nhi,1);
       cut = force->numeric(FLERR,arg[iarg+2]);
       cutghostuser = MAX(cutghostuser,cut);
       if (cut < 0.0)
@@ -414,7 +412,7 @@ void Comm::set_processors(int narg, char **arg)
       if (strcmp(arg[iarg+3],"multiple") == 0) {
         if (universe->iworld == irecv-1) {
           otherflag = 1;
-          other_style = MULTIPLE;
+          other_style = Comm::MULTIPLE;
         }
       } else error->all(FLERR,"Illegal processors command");
       iarg += 4;
@@ -606,7 +604,7 @@ int Comm::coord2proc(double *x, int &igx, int &igy, int &igz)
 
   triclinic = domain->triclinic;
 
-  if (layout == LAYOUT_UNIFORM) {
+  if (layout == Comm::LAYOUT_UNIFORM) {
     if (triclinic == 0) {
       igx = static_cast<int> (procgrid[0] * (x[0]-boxlo[0]) / prd[0]);
       igy = static_cast<int> (procgrid[1] * (x[1]-boxlo[1]) / prd[1]);
@@ -617,7 +615,7 @@ int Comm::coord2proc(double *x, int &igx, int &igy, int &igz)
       igz = static_cast<int> (procgrid[2] * x[2]);
     }
 
-  } else if (layout == LAYOUT_NONUNIFORM) {
+  } else if (layout == Comm::LAYOUT_NONUNIFORM) {
     if (triclinic == 0) {
       igx = binary((x[0]-boxlo[0])/prd[0],procgrid[0],xsplit);
       igy = binary((x[1]-boxlo[1])/prd[1],procgrid[1],ysplit);
@@ -677,10 +675,12 @@ int Comm::binary(double value, int n, double *vec)
      using original inbuf, which may have been updated
    for non-NULL outbuf, final updated inbuf is copied to it
      ok to specify outbuf = inbuf
+   the ptr argument is a pointer to the instance of calling class
 ------------------------------------------------------------------------- */
 
 void Comm::ring(int n, int nper, void *inbuf, int messtag,
-                void (*callback)(int, char *), void *outbuf, int self)
+                void (*callback)(int, char *, void *),
+                void *outbuf, void *ptr, int self)
 {
   MPI_Request request;
   MPI_Status status;
@@ -693,10 +693,15 @@ void Comm::ring(int n, int nper, void *inbuf, int messtag,
 
   if (maxbytes == 0) return;
 
+  // sanity check
+
+  if ((nbytes > 0) && inbuf == NULL)
+    error->one(FLERR,"Cannot put data on ring from NULL pointer");
+
   char *buf,*bufcopy;
   memory->create(buf,maxbytes,"comm:buf");
   memory->create(bufcopy,maxbytes,"comm:bufcopy");
-  memcpy(buf,inbuf,nbytes);
+  if (nbytes && inbuf) memcpy(buf,inbuf,nbytes);
 
   int next = me + 1;
   int prev = me - 1;
@@ -709,12 +714,12 @@ void Comm::ring(int n, int nper, void *inbuf, int messtag,
       MPI_Send(buf,nbytes,MPI_CHAR,next,messtag,world);
       MPI_Wait(&request,&status);
       MPI_Get_count(&status,MPI_CHAR,&nbytes);
-      memcpy(buf,bufcopy,nbytes);
+      if (nbytes) memcpy(buf,bufcopy,nbytes);
     }
-    if (self || loop < nprocs-1) callback(nbytes/nper,buf);
+    if (self || loop < nprocs-1) callback(nbytes/nper,buf,ptr);
   }
 
-  if (outbuf) memcpy(outbuf,buf,nbytes);
+  if (nbytes && outbuf) memcpy(outbuf,buf,nbytes);
 
   memory->destroy(buf);
   memory->destroy(bufcopy);
@@ -735,8 +740,8 @@ int Comm::read_lines_from_file(FILE *fp, int nlines, int maxline, char *buf)
     m = 0;
     for (int i = 0; i < nlines; i++) {
       if (!fgets(&buf[m],maxline,fp)) {
-	m = 0;
-	break;
+        m = 0;
+        break;
       }
       m += strlen(&buf[m]);
     }
@@ -771,8 +776,8 @@ int Comm::read_lines_from_file_universe(FILE *fp, int nlines, int maxline,
     m = 0;
     for (int i = 0; i < nlines; i++) {
       if (!fgets(&buf[m],maxline,fp)) {
-	m = 0;
-	break;
+        m = 0;
+        break;
       }
       m += strlen(&buf[m]);
     }

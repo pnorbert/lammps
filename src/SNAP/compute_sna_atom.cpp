@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 #include "sna.h"
-#include <string.h>
-#include <stdlib.h>
+#include <cstring>
+#include <cstdlib>
 #include "compute_sna_atom.h"
 #include "atom.h"
 #include "update.h"
@@ -30,10 +30,11 @@
 using namespace LAMMPS_NS;
 
 ComputeSNAAtom::ComputeSNAAtom(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg), cutsq(NULL), list(NULL), sna(NULL),
+  radelem(NULL), wjelem(NULL)
 {
   double rmin0, rfac0;
-  int twojmax, switchflag;
+  int twojmax, switchflag, bzeroflag;
   radelem = NULL;
   wjelem = NULL;
 
@@ -47,6 +48,8 @@ ComputeSNAAtom::ComputeSNAAtom(LAMMPS *lmp, int narg, char **arg) :
   diagonalstyle = 0;
   rmin0 = 0.0;
   switchflag = 1;
+  bzeroflag = 1;
+  quadraticflag = 0;
 
   // offset by 1 to match up with types
 
@@ -84,39 +87,51 @@ ComputeSNAAtom::ComputeSNAAtom(LAMMPS *lmp, int narg, char **arg) :
   while (iarg < narg) {
     if (strcmp(arg[iarg],"diagonal") == 0) {
       if (iarg+2 > narg)
-	error->all(FLERR,"Illegal compute sna/atom command");
+        error->all(FLERR,"Illegal compute sna/atom command");
       diagonalstyle = atoi(arg[iarg+1]);
       if (diagonalstyle < 0 || diagonalstyle > 3)
-	error->all(FLERR,"Illegal compute sna/atom command");
+        error->all(FLERR,"Illegal compute sna/atom command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"rmin0") == 0) {
       if (iarg+2 > narg)
-	error->all(FLERR,"Illegal compute sna/atom command");
+        error->all(FLERR,"Illegal compute sna/atom command");
       rmin0 = atof(arg[iarg+1]);
       iarg += 2;
     } else if (strcmp(arg[iarg],"switchflag") == 0) {
       if (iarg+2 > narg)
-	error->all(FLERR,"Illegal compute sna/atom command");
+        error->all(FLERR,"Illegal compute sna/atom command");
       switchflag = atoi(arg[iarg+1]);
+      iarg += 2;
+    } else if (strcmp(arg[iarg],"bzeroflag") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal compute sna/atom command");
+      bzeroflag = atoi(arg[iarg+1]);
+      iarg += 2;
+    } else if (strcmp(arg[iarg],"quadraticflag") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal compute sna/atom command");
+      quadraticflag = atoi(arg[iarg+1]);
       iarg += 2;
     } else error->all(FLERR,"Illegal compute sna/atom command");
   }
 
-  snaptr = new SNA*[comm->nthreads];
+  nthreads = comm->nthreads;
+  snaptr = new SNA*[nthreads];
 #if defined(_OPENMP)
-#pragma omp parallel default(none) shared(lmp,rfac0,twojmax,rmin0,switchflag)
+#pragma omp parallel default(none) shared(lmp,rfac0,twojmax,rmin0,switchflag,bzeroflag)
 #endif
   {
     int tid = omp_get_thread_num();
 
     // always unset use_shared_arrays since it does not work with computes
     snaptr[tid] = new SNA(lmp,rfac0,twojmax,diagonalstyle,
-                          0 /*use_shared_arrays*/, rmin0,switchflag);
+                          0 /*use_shared_arrays*/, rmin0,switchflag,bzeroflag);
   }
 
   ncoeff = snaptr[0]->ncoeff;
-  peratom_flag = 1;
   size_peratom_cols = ncoeff;
+  if (quadraticflag) size_peratom_cols += (ncoeff*(ncoeff+1))/2;
+  peratom_flag = 1;
 
   nmax = 0;
   njmax = 0;
@@ -132,6 +147,8 @@ ComputeSNAAtom::~ComputeSNAAtom()
   memory->destroy(radelem);
   memory->destroy(wjelem);
   memory->destroy(cutsq);
+  for (int tid = 0; tid<nthreads; tid++)
+    delete snaptr[tid];
   delete [] snaptr;
 }
 
@@ -170,7 +187,7 @@ void ComputeSNAAtom::init()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeSNAAtom::init_list(int id, NeighList *ptr)
+void ComputeSNAAtom::init_list(int /*id*/, NeighList *ptr)
 {
   list = ptr;
 }
@@ -232,23 +249,23 @@ void ComputeSNAAtom::compute_peratom()
 
       int ninside = 0;
       for (int jj = 0; jj < jnum; jj++) {
-	int j = jlist[jj];
-	j &= NEIGHMASK;
+        int j = jlist[jj];
+        j &= NEIGHMASK;
 
-	const double delx = xtmp - x[j][0];
-	const double dely = ytmp - x[j][1];
-	const double delz = ztmp - x[j][2];
-	const double rsq = delx*delx + dely*dely + delz*delz;
-	int jtype = type[j];
-	if (rsq < cutsq[itype][jtype] && rsq>1e-20) {
-	  snaptr[tid]->rij[ninside][0] = delx;
-	  snaptr[tid]->rij[ninside][1] = dely;
-	  snaptr[tid]->rij[ninside][2] = delz;
-	  snaptr[tid]->inside[ninside] = j;
-	  snaptr[tid]->wj[ninside] = wjelem[jtype];
-	  snaptr[tid]->rcutij[ninside] = (radi+radelem[jtype])*rcutfac;
-	  ninside++;
-	}
+        const double delx = xtmp - x[j][0];
+        const double dely = ytmp - x[j][1];
+        const double delz = ztmp - x[j][2];
+        const double rsq = delx*delx + dely*dely + delz*delz;
+        int jtype = type[j];
+        if (rsq < cutsq[itype][jtype] && rsq>1e-20) {
+          snaptr[tid]->rij[ninside][0] = delx;
+          snaptr[tid]->rij[ninside][1] = dely;
+          snaptr[tid]->rij[ninside][2] = delz;
+          snaptr[tid]->inside[ninside] = j;
+          snaptr[tid]->wj[ninside] = wjelem[jtype];
+          snaptr[tid]->rcutij[ninside] = (radi+radelem[jtype])*rcutfac;
+          ninside++;
+        }
       }
 
       snaptr[tid]->compute_ui(ninside);
@@ -256,10 +273,25 @@ void ComputeSNAAtom::compute_peratom()
       snaptr[tid]->compute_bi();
       snaptr[tid]->copy_bi2bvec();
       for (int icoeff = 0; icoeff < ncoeff; icoeff++)
-	sna[i][icoeff] = snaptr[tid]->bvec[icoeff];
+        sna[i][icoeff] = snaptr[tid]->bvec[icoeff];
+      if (quadraticflag) {
+        int ncount = ncoeff;
+        for (int icoeff = 0; icoeff < ncoeff; icoeff++) {
+          double bi = snaptr[tid]->bvec[icoeff];
+
+          // diagonal element of quadratic matrix
+
+          sna[i][ncount++] = 0.5*bi*bi;
+
+          // upper-triangular elements of quadratic matrix
+
+          for (int jcoeff = icoeff+1; jcoeff < ncoeff; jcoeff++)
+            sna[i][ncount++] = bi*snaptr[tid]->bvec[jcoeff];
+        }
+      }
     } else {
-      for (int icoeff = 0; icoeff < ncoeff; icoeff++)
-	sna[i][icoeff] = 0.0;
+      for (int icoeff = 0; icoeff < size_peratom_cols; icoeff++)
+        sna[i][icoeff] = 0.0;
     }
   }
 }

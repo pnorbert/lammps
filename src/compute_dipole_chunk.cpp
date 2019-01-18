@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "string.h"
+#include <cstring>
 #include "compute_dipole_chunk.h"
 #include "atom.h"
 #include "update.h"
@@ -29,10 +29,14 @@ enum { MASSCENTER, GEOMCENTER };
 
 /* ---------------------------------------------------------------------- */
 
-ComputeDipoleChunk::ComputeDipoleChunk(LAMMPS *lmp, int narg, char **arg) : 
-  Compute(lmp, narg, arg)
+ComputeDipoleChunk::ComputeDipoleChunk(LAMMPS *lmp, int narg, char **arg) :
+  Compute(lmp, narg, arg),
+  idchunk(NULL), massproc(NULL), masstotal(NULL), chrgproc(NULL),
+  chrgtotal(NULL), com(NULL),
+  comall(NULL), dipole(NULL), dipoleall(NULL)
 {
-  if ((narg != 4) && (narg != 5)) error->all(FLERR,"Illegal compute dipole/chunk command");
+  if ((narg != 4) && (narg != 5))
+    error->all(FLERR,"Illegal compute dipole/chunk command");
 
   array_flag = 1;
   size_array_cols = 4;
@@ -53,17 +57,13 @@ ComputeDipoleChunk::ComputeDipoleChunk(LAMMPS *lmp, int narg, char **arg) :
     else if (strcmp(arg[4],"mass") == 0) usecenter = MASSCENTER;
     else error->all(FLERR,"Illegal compute dipole/chunk command");
   }
-  
+
   init();
 
   // chunk-based data
 
   nchunk = 1;
   maxchunk = 0;
-  massproc = masstotal = NULL;
-  chrgproc = chrgtotal = NULL;
-  com = comall = NULL;
-  dipole = dipoleall = NULL;
   allocate();
 }
 

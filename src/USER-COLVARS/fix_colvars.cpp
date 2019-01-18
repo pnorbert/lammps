@@ -1,3 +1,12 @@
+// -*- c++ -*-
+
+// This file is part of the Collective Variables module (Colvars).
+// The original version of Colvars and its updates are located at:
+// https://github.com/colvars/colvars
+// Please update all Colvars source files before making any changes.
+// If you wish to distribute your changes, please submit them to the
+// Colvars repository at GitHub.
+
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
    http://lammps.sandia.gov, Sandia National Laboratories
@@ -15,10 +24,10 @@
    Contributing author:  Axel Kohlmeyer (Temple U)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <errno.h>
 
 #include "fix_colvars.h"
@@ -370,6 +379,7 @@ int FixColvars::setmask()
   mask |= POST_FORCE;
   mask |= POST_FORCE_RESPA;
   mask |= END_OF_STEP;
+  mask |= POST_RUN;
   return mask;
 }
 
@@ -383,7 +393,7 @@ void FixColvars::init()
     error->all(FLERR,"Cannot use fix colvars without atom IDs");
 
   if (atom->map_style == 0)
-    error->all(FLERR,"Fix colvars requires an atom map");
+    error->all(FLERR,"Fix colvars requires an atom map, see atom_modify");
 
   if ((me == 0) && (update->whichflag == 2))
     error->warning(FLERR,"Using fix colvars with minimization");
@@ -539,9 +549,9 @@ void FixColvars::setup(int vflag)
         } else {
           m[i] = atom->mass[type[k]];
         }
-	if (atom->q_flag) {
-	  q[i] = atom->q[k];
-	}
+        if (atom->q_flag) {
+          q[i] = atom->q[k];
+        }
       }
     }
 
@@ -606,7 +616,7 @@ void FixColvars::setup(int vflag)
           comm_buf[nme].m = atom->mass[type[k]];
         }
 
-	if (atom->q_flag) {
+        if (atom->q_flag) {
           comm_buf[nme].q = atom->q[k];
         }
 
@@ -766,7 +776,7 @@ void FixColvars::post_force(int vflag)
   // call our workhorse and retrieve additional information.
   if (me == 0) {
     energy = proxy->compute();
-    store_forces = proxy->need_system_forces();
+    store_forces = proxy->total_forces_enabled();
   }
   ////////////////////////////////////////////////////////////////////////
 
@@ -904,6 +914,7 @@ void FixColvars::write_restart(FILE *fp)
   if (me == 0) {
     std::string rest_text("");
     proxy->serialize_status(rest_text);
+    // TODO call write_output_files()
     const char *cvm_state = rest_text.c_str();
     int len = strlen(cvm_state) + 1; // need to include terminating NULL byte.
     fwrite(&len,sizeof(int),1,fp);
@@ -920,6 +931,15 @@ void FixColvars::restart(char *buf)
   if (me == 0) {
     std::string rest_text(buf);
     proxy->deserialize_status(rest_text);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixColvars::post_run()
+{
+  if (me == 0) {
+    proxy->write_output_files();
   }
 }
 

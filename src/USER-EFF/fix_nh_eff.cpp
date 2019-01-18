@@ -12,11 +12,11 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
- Contributing author: Andres Jaramillo-Botero (Caltech)
+   Contributing author: Andres Jaramillo-Botero (Caltech)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "fix_nh_eff.h"
 #include "atom.h"
 #include "atom_vec.h"

@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
+#include <cstring>
 #include "fix_enforce2d.h"
 #include "atom.h"
 #include "update.h"
@@ -26,18 +26,20 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixEnforce2D::FixEnforce2D(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  flist(NULL)
 {
   if (narg != 3) error->all(FLERR,"Illegal fix enforce2d command");
 
   nfixlist = 0;
-  flist = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
 
 FixEnforce2D::~FixEnforce2D()
 {
+  if (copymode) return;
+
   delete [] flist;
 }
 
@@ -66,12 +68,21 @@ void FixEnforce2D::init()
     if (modify->fix[i]->enforce2d_flag) nfixlist++;
 
   if (nfixlist) {
+    int myindex = -1;
     delete [] flist;
     flist = new Fix*[nfixlist];
     nfixlist = 0;
     for (int i = 0; i < modify->nfix; i++) {
-      if (modify->fix[i]->enforce2d_flag) 
-        flist[nfixlist++] = modify->fix[i];
+      if (modify->fix[i]->enforce2d_flag) {
+        if (myindex < 0)
+          flist[nfixlist++] = modify->fix[i];
+        else {
+          char msg[256];
+          snprintf(msg,256,"Fix enforce2d must be defined after fix %s",modify->fix[i]->style);
+          error->all(FLERR,msg);
+        }
+      }
+      if (modify->fix[i] == this) myindex = i;
     }
   }
 }
@@ -101,7 +112,7 @@ void FixEnforce2D::min_setup(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixEnforce2D::post_force(int vflag)
+void FixEnforce2D::post_force(int /*vflag*/)
 {
   double **v = atom->v;
   double **f = atom->f;
@@ -153,7 +164,7 @@ void FixEnforce2D::post_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixEnforce2D::post_force_respa(int vflag, int ilevel, int iloop)
+void FixEnforce2D::post_force_respa(int vflag, int /*ilevel*/, int /*iloop*/)
 {
   post_force(vflag);
 }

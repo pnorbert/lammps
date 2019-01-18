@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
+#include <cstdlib>
 #include "fix_read_restart.h"
 #include "atom.h"
 #include "memory.h"
@@ -23,7 +23,8 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixReadRestart::FixReadRestart(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  count(NULL), extra(NULL)
 {
   nextra = force->inumeric(FLERR,arg[3]);
   int nfix = force->inumeric(FLERR,arg[4]);
@@ -31,8 +32,6 @@ FixReadRestart::FixReadRestart(LAMMPS *lmp, int narg, char **arg) :
   // perform initial allocation of atom-based array
   // register with Atom class
 
-  count = NULL;
-  extra = NULL;
   grow_arrays(atom->nmax);
   atom->add_callback(0);
 
@@ -97,7 +96,7 @@ void FixReadRestart::grow_arrays(int nmax)
    copy values within local atom-based array
 ------------------------------------------------------------------------- */
 
-void FixReadRestart::copy_arrays(int i, int j, int delflag)
+void FixReadRestart::copy_arrays(int i, int j, int /*delflag*/)
 {
   count[j] = count[i];
   for (int m = 0; m < count[i]; m++) extra[j][m] = extra[i][m];

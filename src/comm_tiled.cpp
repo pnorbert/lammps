@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
+#include <cstring>
 #include "comm_tiled.h"
 #include "comm_brick.h"
 #include "atom.h"
@@ -38,18 +38,12 @@ using namespace LAMMPS_NS;
 
 #define DELTA_PROCS 16
 
-enum{SINGLE,MULTI};               // same as in Comm
-enum{LAYOUT_UNIFORM,LAYOUT_NONUNIFORM,LAYOUT_TILED};    // several files
-
 /* ---------------------------------------------------------------------- */
 
 CommTiled::CommTiled(LAMMPS *lmp) : Comm(lmp)
 {
-  if (lmp->kokkos)
-    error->all(FLERR,"KOKKOS package does not yet support comm_style tiled");
-
   style = 1;
-  layout = LAYOUT_UNIFORM;
+  layout = Comm::LAYOUT_UNIFORM;
   pbc_flag = NULL;
   init_buffers();
 }
@@ -60,12 +54,9 @@ CommTiled::CommTiled(LAMMPS *lmp) : Comm(lmp)
 //           for Comm is run and thus creating a shallow copy of "oldcomm".
 //           The call to Comm::copy_arrays() then converts the shallow copy
 //           into a deep copy of the class with the new layout.
-//
-CommTiled::CommTiled(LAMMPS *lmp, Comm *oldcomm) : Comm(*oldcomm)
-{
-  if (lmp->kokkos)
-    error->all(FLERR,"KOKKOS package does not yet support comm_style tiled");
 
+CommTiled::CommTiled(LAMMPS * /*lmp*/, Comm *oldcomm) : Comm(*oldcomm)
+{
   style = 1;
   layout = oldcomm->layout;
   Comm::copy_arrays(oldcomm);
@@ -121,7 +112,7 @@ void CommTiled::init()
 
   if (triclinic)
     error->all(FLERR,"Cannot yet use comm_style tiled with triclinic box");
-  if (mode == MULTI)
+  if (mode == Comm::MULTI)
     error->all(FLERR,"Cannot yet use comm_style tiled with multi-mode comm");
 }
 
@@ -147,7 +138,7 @@ void CommTiled::setup()
 
   // set function pointers
 
-  if (layout != LAYOUT_TILED) {
+  if (layout != Comm::LAYOUT_TILED) {
     box_drop = &CommTiled::box_drop_brick;
     box_other = &CommTiled::box_other_brick;
     box_touch = &CommTiled::box_touch_brick;
@@ -161,7 +152,7 @@ void CommTiled::setup()
 
   // if RCB decomp exists and just changed, gather needed global RCB info
 
-  if (layout == LAYOUT_TILED) coord2proc_setup();
+  if (layout == Comm::LAYOUT_TILED) coord2proc_setup();
 
   // set cutoff for comm forward and comm reverse
   // check that cutoff < any periodic box length
@@ -447,7 +438,7 @@ void CommTiled::setup()
    other per-atom attributes may also be sent via pack/unpack routines
 ------------------------------------------------------------------------- */
 
-void CommTiled::forward_comm(int dummy)
+void CommTiled::forward_comm(int /*dummy*/)
 {
   int i,irecv,n,nsend,nrecv;
   AtomVec *avec = atom->avec;
@@ -697,28 +688,14 @@ void CommTiled::exchange()
       if (x[i][dim] < lo || x[i][dim] >= hi) {
         if (nsend > maxsend) grow_send(nsend,1);
         proc = (this->*point_drop)(dim,x[i]);
-
-        /*
-        // DEBUG:
-        // test if proc is not in exch list, means will lose atom
-        // could be that *should* lose atom
-        int flag = 0;
-        for (int k = 0; k < nexchproc[dim]; k++)
-          if (proc == exchproc[k]) flag = 1;
-        if (!flag)
-          printf("Losing exchange atom: dim %d me %d %proc %d: %g %g %g\n",
-                 dim,me,proc,x[i][0],x[i][1],x[i][2]);
-        */
-
         if (proc != me) {
           buf_send[nsend++] = proc;
           nsend += avec->pack_exchange(i,&buf_send[nsend]);
-          avec->copy(nlocal-1,i,1);
-          nlocal--;
-        } else i++;
+        }
+        avec->copy(nlocal-1,i,1);
+        nlocal--;
       } else i++;
     }
-
     atom->nlocal = nlocal;
 
     // send and recv atoms from neighbor procs that touch my sub-box in dim
@@ -1187,7 +1164,7 @@ void CommTiled::reverse_comm_fix(Fix *fix, int size)
    NOTE: how to setup one big buf recv with correct offsets ??
 ------------------------------------------------------------------------- */
 
-void CommTiled::reverse_comm_fix_variable(Fix *fix)
+void CommTiled::reverse_comm_fix_variable(Fix * /*fix*/)
 {
   error->all(FLERR,"Reverse comm fix variable not yet supported by CommTiled");
 }
@@ -1451,7 +1428,7 @@ void CommTiled::forward_comm_array(int nsize, double **array)
    NOTE: this method is currently not used
 ------------------------------------------------------------------------- */
 
-int CommTiled::exchange_variable(int n, double *inbuf, double *&outbuf)
+int CommTiled::exchange_variable(int n, double * /*inbuf*/, double *& /*outbuf*/)
 {
   int nrecv = n;
   return nrecv;
@@ -1469,7 +1446,7 @@ void CommTiled::box_drop_brick(int idim, double *lo, double *hi, int &indexme)
   // NOTE: these error messages are internal sanity checks
   //       should not occur, can be removed at some point
 
-  int index,dir;
+  int index=-1,dir;
   if (hi[idim] == sublo[idim]) {
     index = myloc[idim] - 1;
     dir = -1;
@@ -1532,7 +1509,7 @@ void CommTiled::box_drop_brick(int idim, double *lo, double *hi, int &indexme)
    no need to split lo/hi box as recurse b/c OK if box extends outside RCB box
 ------------------------------------------------------------------------- */
 
-void CommTiled::box_drop_tiled(int idim, double *lo, double *hi, int &indexme)
+void CommTiled::box_drop_tiled(int /*idim*/, double *lo, double *hi, int &indexme)
 {
   box_drop_tiled_recurse(lo,hi,0,nprocs-1,indexme);
 }
@@ -1624,7 +1601,7 @@ void CommTiled::box_other_brick(int idim, int idir,
    return other box owned by proc as lo/hi corner pts
 ------------------------------------------------------------------------- */
 
-void CommTiled::box_other_tiled(int idim, int idir,
+void CommTiled::box_other_tiled(int /*idim*/, int /*idir*/,
                                 int proc, double *lo, double *hi)
 {
   double (*split)[2] = rcbinfo[proc].mysplit;
@@ -1693,10 +1670,7 @@ int CommTiled::point_drop_brick(int idim, double *x)
 }
 
 /* ----------------------------------------------------------------------
-   determine overlap list of Noverlap procs the lo/hi box overlaps
-   overlap = non-zero area in common between box and proc sub-domain
-   recursive method for traversing an RCB tree of cuts
-   no need to split lo/hi box as recurse b/c OK if box extends outside RCB box
+   determine which proc owns point x via recursion thru RCB tree
 ------------------------------------------------------------------------- */
 
 int CommTiled::point_drop_tiled(int idim, double *x)
@@ -1830,7 +1804,7 @@ void CommTiled::coord2proc_setup()
 
 int CommTiled::coord2proc(double *x, int &igx, int &igy, int &igz)
 {
-  if (layout != LAYOUT_TILED) return Comm::coord2proc(x,igx,igy,igz);
+  if (layout != Comm::LAYOUT_TILED) return Comm::coord2proc(x,igx,igy,igz);
   return point_drop_tiled_recurse(x,0,nprocs-1);
 }
 

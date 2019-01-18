@@ -17,10 +17,10 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "atom.h"
 #include "gridcomm.h"
@@ -44,18 +44,25 @@ enum{FORWARD_RHO,FORWARD_AD,FORWARD_AD_PERATOM};
 
 /* ---------------------------------------------------------------------- */
 
-MSMCGOMP::MSMCGOMP(LAMMPS *lmp, int narg, char **arg) : MSMOMP(lmp, narg, arg)
+MSMCGOMP::MSMCGOMP(LAMMPS *lmp) : MSMOMP(lmp),
+  is_charged(NULL)
+{
+  triclinic_support = 0;
+
+  num_charged = -1;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void MSMCGOMP::settings(int narg, char **arg)
 {
   if ((narg < 1) || (narg > 2))
     error->all(FLERR,"Illegal kspace_style msm/cg/omp command");
 
-  triclinic_support = 0;
+  MSMOMP::settings(narg,arg);
 
   if (narg == 2) smallq = fabs(force->numeric(FLERR,arg[1]));
   else smallq = SMALLQ;
-
-  num_charged = -1;
-  is_charged = NULL;
 }
 
 /* ----------------------------------------------------------------------
@@ -192,7 +199,7 @@ void MSMCGOMP::compute(int eflag, int vflag)
   }
 
 
-  // compute direct interation for top grid level for nonperiodic
+  // compute direct interation for top grid level for non-periodic
   //   and for second from top grid level for periodic
 
   if (active_flag[levels-1]) {
@@ -331,7 +338,7 @@ void MSMCGOMP::particle_map()
   int flag = 0;
   int i;
 
-  if (!ISFINITE(boxlo[0]) || !ISFINITE(boxlo[1]) || !ISFINITE(boxlo[2]))
+  if (!std::isfinite(boxlo[0]) || !std::isfinite(boxlo[1]) || !std::isfinite(boxlo[2]))
     error->one(FLERR,"Non-numeric box dimensions - simulation unstable");
 
   // XXX: O(N). is it worth to add OpenMP here?

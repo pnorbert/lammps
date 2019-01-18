@@ -15,8 +15,8 @@
    Contributing author: James Larentzos (U.S. Army Research Laboratory)
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "fix_eos_table.h"
 #include "atom.h"
 #include "error.h"
@@ -31,10 +31,9 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixEOStable::FixEOStable(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg), ntables(0), tables(NULL)
 {
   if (narg != 7) error->all(FLERR,"Illegal fix eos/table command");
-  restart_peratom = 1;
   nevery = 1;
 
   if (strcmp(arg[3],"linear") == 0) tabstyle = LINEAR;
@@ -78,6 +77,9 @@ FixEOStable::FixEOStable(LAMMPS *lmp, int narg, char **arg) :
   spline_table(tb2);
   compute_table(tb2);
   ntables++;
+
+  if (atom->dpd_flag != 1)
+    error->all(FLERR,"FixEOStable requires atom_style with internal temperature and energies (e.g. dpd)");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -119,8 +121,8 @@ void FixEOStable::init()
         if(dpdTheta[i] <= 0.0)
           error->one(FLERR,"Internal temperature <= zero");
         energy_lookup(dpdTheta[i],tmp);
-        uCond[i] = tmp / 2.0;
-        uMech[i] = tmp / 2.0;
+        uCond[i] = 0.0;
+        uMech[i] = tmp;
       }
   }
 }
@@ -198,7 +200,7 @@ void FixEOStable::read_table(Table *tb, Table *tb2, char *file, char *keyword)
   FILE *fp = force->open_potential(file);
   if (fp == NULL) {
     char str[128];
-    sprintf(str,"Cannot open file %s",file);
+    snprintf(str,128,"Cannot open file %s",file);
     error->one(FLERR,str);
   }
 

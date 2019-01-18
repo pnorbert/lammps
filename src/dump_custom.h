@@ -33,13 +33,24 @@ class DumpCustom : public Dump {
   int nevery;                // dump frequency for output
   int iregion;               // -1 if no region, else which region
   char *idregion;            // region ID
-  int nthresh;               // # of defined threshholds
-  int *thresh_array;         // array to threshhhold on for each nthresh
-  int *thresh_op;            // threshhold operation for each nthresh
-  double *thresh_value;      // threshhold value for each nthresh
+
+  int nthresh;               // # of defined thresholds
+  int nthreshlast;           // # of defined thresholds with value = LAST
+
+  int *thresh_array;         // array to threshold on for each nthresh
+  int *thresh_op;            // threshold operation for each nthresh
+  double *thresh_value;      // threshold value for each nthresh
+  int *thresh_last;          // for threshold value = LAST,
+                             // index into thresh_fix
+                             // -1 if not LAST, value is numeric
+
+  class FixStore **thresh_fix;  // stores values for each threshold LAST
+  char **thresh_fixID;          // IDs of thresh_fixes
+  int *thresh_first;            // 1 the first time a FixStore values accessed
 
   int expand;                // flag for whether field args were expanded
   char **earg;               // field names with wildcard expansion
+  int nargnew;               // size of earg
 
   int *vtype;                // type of each vector (INT, DOUBLE)
   char **vformat;            // format string for each vector element
@@ -49,7 +60,7 @@ class DumpCustom : public Dump {
   int nchoose;               // # of selected atoms
   int maxlocal;              // size of atom selection and variable arrays
   int *choose;               // local indices of selected atoms
-  double *dchoose;           // value for each atom to threshhold against
+  double *dchoose;           // value for each atom to threshold against
   int *clist;                // compressed list of indices of selected atoms
 
   int nfield;                // # of keywords listed by user
@@ -193,14 +204,19 @@ E: No dump custom arguments specified
 The dump custom command requires that atom quantities be specified to
 output to dump file.
 
+E: Illegal ... command
+
+Self-explanatory.  Check the input script syntax and compare to the
+documentation for the command.  You can use -echo screen as a
+command-line option when running LAMMPS to see the offending line.
+
 E: Invalid attribute in dump custom command
 
-Self-explantory.
+Self-explanatory.
 
-E: Dump_modify format string is too short
+E: Dump_modify format line is too short
 
-There are more fields to be dumped in a line of output than your
-format string specifies.
+UNDOCUMENTED
 
 E: Could not find dump custom compute ID
 
@@ -232,9 +248,9 @@ E: Compute used in dump between runs is not current
 The compute was not invoked on the current timestep, therefore it
 cannot be used in a dump between runs.
 
-E: Threshhold for an atom property that isn't allocated
+E: Threshold for an atom property that isn't allocated
 
-A dump threshhold has been requested on a quantity that is
+A dump threshold has been requested on a quantity that is
 not defined by the atom style used in this simulation.
 
 E: Dumping an atom property that isn't allocated
@@ -287,23 +303,25 @@ E: Custom per-atom property ID is not integer
 
 Self-explanatory.
 
-E: Illegal ... command
-
-Self-explanatory.  Check the input script syntax and compare to the
-documentation for the command.  You can use -echo screen as a
-command-line option when running LAMMPS to see the offending line.
-
 E: Dump_modify region ID does not exist
 
 Self-explanatory.
 
-E: Dump modify element names do not match atom types
+E: Dump_modify int format does not contain d character
 
-Number of element names must equal number of atom types.
+UNDOCUMENTED
+
+E: Dump_modify element names do not match atom types
+
+UNDOCUMENTED
+
+E: Dump modify can only have one refresh
+
+UNDOCUMENTED
 
 E: Invalid attribute in dump modify command
 
-Self-explantory.
+Self-explanatory.
 
 E: Could not find dump modify compute ID
 
@@ -361,7 +379,24 @@ E: Could not find dump modify custom atom integer property ID
 
 Self-explanatory.
 
-E: Invalid dump_modify threshhold operator
+E: Invalid dump_modify thresh attribute
+
+UNDOCUMENTED
+
+E: Invalid dump_modify thresh operator
+
+UNDOCUMENTED
+
+U: Dump_modify format string is too short
+
+There are more fields to be dumped in a line of output than your
+format string specifies.
+
+U: Dump modify element names do not match atom types
+
+Number of element names must equal number of atom types.
+
+U: Invalid dump_modify threshold operator
 
 Operator keyword used for threshold specification in not recognized.
 

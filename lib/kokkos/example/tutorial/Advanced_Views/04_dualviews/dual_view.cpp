@@ -35,7 +35,7 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact  H. Carter Edwards (hcedwar@sandia.gov)
+// Questions? Contact Christian R. Trott (crtrott@sandia.gov)
 // 
 // ************************************************************************
 //@HEADER
@@ -76,7 +76,7 @@ struct localsum {
   // overrides Kokkos' default execution space.
   typedef ExecutionSpace execution_space;
 
-  typedef typename Kokkos::Impl::if_c<Kokkos::Impl::is_same<ExecutionSpace,Kokkos::DefaultExecutionSpace>::value ,
+  typedef typename Kokkos::Impl::if_c<std::is_same<ExecutionSpace,Kokkos::DefaultExecutionSpace>::value ,
      idx_type::memory_space, idx_type::host_mirror_space>::type memory_space;
 
   // Get the view types on the particular device for which the functor
@@ -87,9 +87,9 @@ struct localsum {
   // For example, the const_data_type version of double** is const
   // double**.
   Kokkos::View<idx_type::const_data_type, idx_type::array_layout, memory_space> idx;
-  // "array_intrinsic_type" is a typedef in ViewTraits (and DualView) which is the
+  // "scalar_array_type" is a typedef in ViewTraits (and DualView) which is the
   // array version of the value(s) stored in the View.
-  Kokkos::View<view_type::array_intrinsic_type, view_type::array_layout, memory_space> dest;
+  Kokkos::View<view_type::scalar_array_type, view_type::array_layout, memory_space> dest;
   Kokkos::View<view_type::const_data_type, view_type::array_layout,
                memory_space, Kokkos::MemoryRandomAccess> src;
 
@@ -127,9 +127,9 @@ struct localsum {
   KOKKOS_INLINE_FUNCTION
   void operator() (const int i) const {
     double tmp = 0.0;
-    for (int j = 0; j < (int) idx.dimension_1(); ++j) {
+    for (int j = 0; j < (int) idx.extent(1); ++j) {
       const double val = src(idx(i,j));
-      tmp += val*val + 0.5*(idx.dimension_0()*val -idx.dimension_1()*val);
+      tmp += val*val + 0.5*(idx.extent(0)*val -idx.extent(1)*val);
     }
     dest(i) += tmp;
   }
@@ -150,6 +150,9 @@ protected:
 int main (int narg, char* arg[]) {
   Kokkos::initialize (narg, arg);
 
+// If View is non-trivial constructible type then add braces so it is out of scope
+// before Kokkos::finalize() call
+{
   ParticleTypes test("Test");
   Kokkos::fence();
   test.h_view(0) = ParticleType(-1e4,1);
@@ -170,7 +173,7 @@ int main (int narg, char* arg[]) {
   // idx.view<idx_type::host_mirror_space>() )
   idx_type::t_host h_idx = idx.h_view;
   for (int i = 0; i < size; ++i) {
-    for (view_type::size_type j = 0; j < h_idx.dimension_1 (); ++j) {
+    for (view_type::size_type j = 0; j < h_idx.extent(1); ++j) {
       h_idx(i,j) = (size + i + (rand () % 500 - 250)) % size;
     }
   }
@@ -182,7 +185,7 @@ int main (int narg, char* arg[]) {
 
   // Run on the device.  This will cause a sync of idx to the device,
   // since it was marked as modified on the host.
-  Kokkos::Impl::Timer timer;
+  Kokkos::Timer timer;
   Kokkos::parallel_for(size,localsum<view_type::execution_space>(idx,dest,src));
   Kokkos::fence();
   double sec1_dev = timer.seconds();
@@ -208,6 +211,7 @@ int main (int narg, char* arg[]) {
 
   printf("Device Time with Sync: %f without Sync: %f \n",sec1_dev,sec2_dev);
   printf("Host   Time with Sync: %f without Sync: %f \n",sec1_host,sec2_host);
+}
 
   Kokkos::finalize();
 }

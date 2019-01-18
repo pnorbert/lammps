@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <string.h>
+#include <cmath>
+#include <cstring>
 #include "compute_property_atom.h"
 #include "math_extra.h"
 #include "atom.h"
@@ -32,7 +32,8 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputePropertyAtom::ComputePropertyAtom(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg),
+  index(NULL), pack_choice(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal compute property/atom command");
 
@@ -140,7 +141,41 @@ ComputePropertyAtom::ComputePropertyAtom(LAMMPS *lmp, int narg, char **arg) :
         error->all(FLERR,"Compute property/atom for "
                    "atom property that isn't allocated");
       pack_choice[i] = &ComputePropertyAtom::pack_mu;
-
+    } else if (strcmp(arg[iarg],"spx") == 0) { 		// pack magnetic variables
+      if (!atom->sp_flag)
+        error->all(FLERR,"Compute property/atom for "
+                   "atom property that isn't allocated");
+      pack_choice[i] = &ComputePropertyAtom::pack_spx;
+    } else if (strcmp(arg[iarg],"spy") == 0) {
+      if (!atom->sp_flag)
+        error->all(FLERR,"Compute property/atom for "
+                   "atom property that isn't allocated");
+      pack_choice[i] = &ComputePropertyAtom::pack_spy;
+    } else if (strcmp(arg[iarg],"spz") == 0) {
+      if (!atom->sp_flag)
+        error->all(FLERR,"Compute property/atom for "
+                   "atom property that isn't allocated");
+      pack_choice[i] = &ComputePropertyAtom::pack_spz;
+    } else if (strcmp(arg[iarg],"sp") == 0) {
+      if (!atom->sp_flag)
+        error->all(FLERR,"Compute property/atom for "
+                   "atom property that isn't allocated");
+      pack_choice[i] = &ComputePropertyAtom::pack_sp;
+    } else if (strcmp(arg[iarg],"fmx") == 0) {
+      if (!atom->sp_flag)
+        error->all(FLERR,"Compute property/atom for "
+                   "atom property that isn't allocated");
+      pack_choice[i] = &ComputePropertyAtom::pack_fmx;
+    } else if (strcmp(arg[iarg],"fmy") == 0) {
+      if (!atom->sp_flag)
+        error->all(FLERR,"Compute property/atom for "
+                   "atom property that isn't allocated");
+      pack_choice[i] = &ComputePropertyAtom::pack_fmy;
+    } else if (strcmp(arg[iarg],"fmz") == 0) {
+      if (!atom->sp_flag)
+        error->all(FLERR,"Compute property/atom for "
+                   "atom property that isn't allocated");
+      pack_choice[i] = &ComputePropertyAtom::pack_fmz;
     } else if (strcmp(arg[iarg],"radius") == 0) {
       if (!atom->radius_flag)
         error->all(FLERR,"Compute property/atom for "
@@ -352,8 +387,6 @@ ComputePropertyAtom::ComputePropertyAtom(LAMMPS *lmp, int narg, char **arg) :
   }
 
   nmax = 0;
-  vector = NULL;
-  array = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -362,8 +395,8 @@ ComputePropertyAtom::~ComputePropertyAtom()
 {
   delete [] pack_choice;
   delete [] index;
-  memory->destroy(vector);
-  memory->destroy(array);
+  memory->destroy(vector_atom);
+  memory->destroy(array_atom);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -387,23 +420,21 @@ void ComputePropertyAtom::compute_peratom()
   if (atom->nmax > nmax) {
     nmax = atom->nmax;
     if (nvalues == 1) {
-      memory->destroy(vector);
-      memory->create(vector,nmax,"property/atom:vector");
-      vector_atom = vector;
+      memory->destroy(vector_atom);
+      memory->create(vector_atom,nmax,"property/atom:vector");
     } else {
-      memory->destroy(array);
-      memory->create(array,nmax,nvalues,"property/atom:array");
-      array_atom = array;
+      memory->destroy(array_atom);
+      memory->create(array_atom,nmax,nvalues,"property/atom:array");
     }
   }
 
   // fill vector or array with per-atom values
 
   if (nvalues == 1) {
-    buf = vector;
+    buf = vector_atom;
     (this->*pack_choice[0])(0);
   } else {
-    if (nmax) buf = &array[0][0];
+    if (nmax) buf = &array_atom[0][0];
     else buf = NULL;
     for (int n = 0; n < nvalues; n++)
       (this->*pack_choice[n])(n);
@@ -996,6 +1027,111 @@ void ComputePropertyAtom::pack_mu(int n)
 
   for (int i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) buf[n] = mu[i][3];
+    else buf[n] = 0.0;
+    n += nvalues;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputePropertyAtom::pack_spx(int n)
+{
+  double **sp = atom->sp;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+
+  for (int i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) buf[n] = sp[i][0];
+    else buf[n] = 0.0;
+    n += nvalues;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputePropertyAtom::pack_spy(int n)
+{
+  double **sp = atom->sp;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+
+  for (int i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) buf[n] = sp[i][1];
+    else buf[n] = 0.0;
+    n += nvalues;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputePropertyAtom::pack_spz(int n)
+{
+  double **sp = atom->sp;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+
+  for (int i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) buf[n] = sp[i][2];
+    else buf[n] = 0.0;
+    n += nvalues;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputePropertyAtom::pack_sp(int n)
+{
+  double **sp = atom->sp;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+
+  for (int i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) buf[n] = sp[i][3];
+    else buf[n] = 0.0;
+    n += nvalues;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputePropertyAtom::pack_fmx(int n)
+{
+  double **fm = atom->fm;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+
+  for (int i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) buf[n] = fm[i][0];
+    else buf[n] = 0.0;
+    n += nvalues;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputePropertyAtom::pack_fmy(int n)
+{
+  double **fm = atom->fm;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+
+  for (int i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) buf[n] = fm[i][1];
+    else buf[n] = 0.0;
+    n += nvalues;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputePropertyAtom::pack_fmz(int n)
+{
+  double **fm = atom->fm;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
+
+  for (int i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) buf[n] = fm[i][2];
     else buf[n] = 0.0;
     n += nvalues;
   }

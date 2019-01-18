@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "fix_property_atom.h"
 #include "atom.h"
 #include "comm.h"
@@ -29,7 +29,8 @@ enum{MOLECULE,CHARGE,RMASS,INTEGER,DOUBLE};
 /* ---------------------------------------------------------------------- */
 
 FixPropertyAtom::FixPropertyAtom(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  nvalue(0), style(NULL), index(NULL), astyle(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal fix property/atom command");
 
@@ -133,7 +134,8 @@ FixPropertyAtom::FixPropertyAtom(LAMMPS *lmp, int narg, char **arg) :
   // register with Atom class
 
   nmax_old = 0;
-  grow_arrays(atom->nmax);
+  if (!lmp->kokkos)
+    grow_arrays(atom->nmax);
   atom->add_callback(0);
   atom->add_callback(1);
   if (border) atom->add_callback(2);
@@ -222,7 +224,7 @@ void FixPropertyAtom::read_data_section(char *keyword, int n, char *buf,
 
   if (nwords != nvalue+1) {
     char str[128];
-    sprintf(str,"Incorrect %s format in data file",keyword);
+    snprintf(str,128,"Incorrect %s format in data file",keyword);
     error->all(FLERR,str);
   }
 
@@ -240,7 +242,7 @@ void FixPropertyAtom::read_data_section(char *keyword, int n, char *buf,
     values[0] = strtok(buf," \t\n\r\f");
     if (values[0] == NULL) {
       char str[128];
-      sprintf(str,"Too few lines in %s section of data file",keyword);
+      snprintf(str,128,"Too few lines in %s section of data file",keyword);
       error->one(FLERR,str);
     }
     int format_ok = 1;
@@ -250,14 +252,14 @@ void FixPropertyAtom::read_data_section(char *keyword, int n, char *buf,
     }
     if (!format_ok) {
       char str[128];
-      sprintf(str,"Incorrect %s format in data file",keyword);
+      snprintf(str,128,"Incorrect %s format in data file",keyword);
       error->all(FLERR,str);
     }
 
     itag = ATOTAGINT(values[0]) + id_offset;
     if (itag <= 0 || itag > map_tag_max) {
       char str[128];
-      sprintf(str,"Invalid atom ID in %s section of data file",keyword);
+      snprintf(str,128,"Invalid atom ID in %s section of data file",keyword);
       error->one(FLERR,str);
     }
 
@@ -290,7 +292,7 @@ void FixPropertyAtom::read_data_section(char *keyword, int n, char *buf,
    return # of lines in section of data file labeled by keyword
 ------------------------------------------------------------------------- */
 
-bigint FixPropertyAtom::read_data_skip_lines(char *keyword)
+bigint FixPropertyAtom::read_data_skip_lines(char * /*keyword*/)
 {
   return atom->natoms;
 }
@@ -302,7 +304,7 @@ bigint FixPropertyAtom::read_data_skip_lines(char *keyword)
    ny = columns = tag + nvalues
 ------------------------------------------------------------------------- */
 
-void FixPropertyAtom::write_data_section_size(int mth, int &nx, int &ny)
+void FixPropertyAtom::write_data_section_size(int /*mth*/, int &nx, int &ny)
 {
   nx = atom->nlocal;
   ny = nvalue + 1;
@@ -313,7 +315,7 @@ void FixPropertyAtom::write_data_section_size(int mth, int &nx, int &ny)
    buf allocated by caller as Nlocal by Nvalues+1
 ------------------------------------------------------------------------- */
 
-void FixPropertyAtom::write_data_section_pack(int mth, double **buf)
+void FixPropertyAtom::write_data_section_pack(int /*mth*/, double **buf)
 {
   int i;
 
@@ -352,7 +354,7 @@ void FixPropertyAtom::write_data_section_pack(int mth, double **buf)
    only called by proc 0
 ------------------------------------------------------------------------- */
 
-void FixPropertyAtom::write_data_section_keyword(int mth, FILE *fp)
+void FixPropertyAtom::write_data_section_keyword(int /*mth*/, FILE *fp)
 {
   if (nvalue == 1 && style[0] == MOLECULE) fprintf(fp,"\nMolecules\n\n");
   else if (nvalue == 1 && style[0] == CHARGE) fprintf(fp,"\nCharges\n\n");
@@ -366,8 +368,8 @@ void FixPropertyAtom::write_data_section_keyword(int mth, FILE *fp)
    only called by proc 0
 ------------------------------------------------------------------------- */
 
-void FixPropertyAtom::write_data_section(int mth, FILE *fp,
-                                         int n, double **buf, int index)
+void FixPropertyAtom::write_data_section(int /*mth*/, FILE *fp,
+                                         int n, double **buf, int /*index*/)
 {
   int m;
 
@@ -441,7 +443,7 @@ void FixPropertyAtom::grow_arrays(int nmax)
    copy values within local atom-based arrays
 ------------------------------------------------------------------------- */
 
-void FixPropertyAtom::copy_arrays(int i, int j, int delflag)
+void FixPropertyAtom::copy_arrays(int i, int j, int /*delflag*/)
 {
   for (int m = 0; m < nvalue; m++) {
     if (style[m] == MOLECULE)
@@ -642,7 +644,7 @@ int FixPropertyAtom::maxsize_restart()
    size of atom nlocal's restart data
 ------------------------------------------------------------------------- */
 
-int FixPropertyAtom::size_restart(int nlocal)
+int FixPropertyAtom::size_restart(int /*nlocal*/)
 {
   return nvalue+1;
 }

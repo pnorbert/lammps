@@ -11,8 +11,8 @@
  See the README file in the top-level LAMMPS directory.
  ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "pair_sph_heatconduction.h"
 #include "atom.h"
 #include "force.h"
@@ -155,10 +155,10 @@ void PairSPHHeatConduction::allocate() {
  global settings
  ------------------------------------------------------------------------- */
 
-void PairSPHHeatConduction::settings(int narg, char **arg) {
+void PairSPHHeatConduction::settings(int narg, char **/*arg*/) {
   if (narg != 0)
     error->all(FLERR,
-        "Illegal number of setting arguments for pair_style sph/heatconduction");
+        "Illegal number of arguments for pair_style sph/heatconduction");
 }
 
 /* ----------------------------------------------------------------------
@@ -172,8 +172,8 @@ void PairSPHHeatConduction::coeff(int narg, char **arg) {
     allocate();
 
   int ilo, ihi, jlo, jhi;
-  force->bounds(arg[0], atom->ntypes, ilo, ihi);
-  force->bounds(arg[1], atom->ntypes, jlo, jhi);
+  force->bounds(FLERR,arg[0], atom->ntypes, ilo, ihi);
+  force->bounds(FLERR,arg[1], atom->ntypes, jlo, jhi);
 
   double alpha_one = force->numeric(FLERR,arg[2]);
   double cut_one   = force->numeric(FLERR,arg[3]);
@@ -211,8 +211,8 @@ double PairSPHHeatConduction::init_one(int i, int j) {
 
 /* ---------------------------------------------------------------------- */
 
-double PairSPHHeatConduction::single(int i, int j, int itype, int jtype,
-    double rsq, double factor_coul, double factor_lj, double &fforce) {
+double PairSPHHeatConduction::single(int /*i*/, int /*j*/, int /*itype*/, int /*jtype*/,
+    double /*rsq*/, double /*factor_coul*/, double /*factor_lj*/, double &fforce) {
   fforce = 0.0;
 
   return 0.0;

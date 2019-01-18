@@ -15,10 +15,10 @@
    Contributing authors: Stan Moore (SNL), Christian Trott (SNL)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "kokkos.h"
 #include "pair_kokkos.h"
 #include "pair_eam_kokkos.h"
@@ -28,12 +28,11 @@
 #include "neighbor.h"
 #include "neigh_list_kokkos.h"
 #include "neigh_request.h"
-#include "memory.h"
+#include "memory_kokkos.h"
 #include "error.h"
 #include "atom_masks.h"
 
 using namespace LAMMPS_NS;
-
 
 /* ---------------------------------------------------------------------- */
 
@@ -54,8 +53,8 @@ template<class DeviceType>
 PairEAMKokkos<DeviceType>::~PairEAMKokkos()
 {
   if (!copymode) {
-    memory->destroy_kokkos(k_eatom,eatom);
-    memory->destroy_kokkos(k_vatom,vatom);
+    memoryKK->destroy_kokkos(k_eatom,eatom);
+    memoryKK->destroy_kokkos(k_vatom,vatom);
   }
 }
 
@@ -69,20 +68,20 @@ void PairEAMKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
 
   if (neighflag == FULL) no_virial_fdotr_compute = 1;
 
-  if (eflag || vflag) ev_setup(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag,0);
   else evflag = vflag_fdotr = 0;
 
   // reallocate per-atom arrays if necessary
 
   if (eflag_atom) {
-    memory->destroy_kokkos(k_eatom,eatom);
-    memory->create_kokkos(k_eatom,eatom,maxeatom,"pair:eatom");
-    d_eatom = k_eatom.d_view;
+    memoryKK->destroy_kokkos(k_eatom,eatom);
+    memoryKK->create_kokkos(k_eatom,eatom,maxeatom,"pair:eatom");
+    d_eatom = k_eatom.view<DeviceType>();
   }
   if (vflag_atom) {
-    memory->destroy_kokkos(k_vatom,vatom);
-    memory->create_kokkos(k_vatom,vatom,maxvatom,6,"pair:vatom");
-    d_vatom = k_vatom.d_view;
+    memoryKK->destroy_kokkos(k_vatom,vatom);
+    memoryKK->create_kokkos(k_vatom,vatom,maxvatom,6,"pair:vatom");
+    d_vatom = k_vatom.view<DeviceType>();
   }
 
   atomKK->sync(execution_space,datamask_read);
@@ -96,15 +95,14 @@ void PairEAMKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
     nmax = atom->nmax;
     k_rho = DAT::tdual_ffloat_1d("pair:rho",nmax);
     k_fp = DAT::tdual_ffloat_1d("pair:fp",nmax);
-    d_rho = k_rho.d_view;
-    d_fp = k_fp.d_view;
+    d_rho = k_rho.template view<DeviceType>();
+    d_fp = k_fp.template view<DeviceType>();
     h_rho = k_rho.h_view;
     h_fp = k_fp.h_view;
   }
 
   x = atomKK->k_x.view<DeviceType>();
   f = atomKK->k_f.view<DeviceType>();
-  v_rho = k_rho.view<DeviceType>();
   type = atomKK->k_type.view<DeviceType>();
   tag = atomKK->k_tag.view<DeviceType>();
   nlocal = atom->nlocal;
@@ -117,9 +115,19 @@ void PairEAMKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
   d_ilist = k_list->d_ilist;
   int inum = list->inum;
 
-  // Call cleanup_copy which sets allocations NULL which are destructed by the PairStyle
+  need_dup = lmp->kokkos->need_dup<DeviceType>();
+  if (need_dup) {
+    dup_rho   = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterDuplicated>(d_rho);
+    dup_f     = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterDuplicated>(f);
+    dup_eatom = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterDuplicated>(d_eatom);
+    dup_vatom = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterDuplicated>(d_vatom);
+  } else {
+    ndup_rho   = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterNonDuplicated>(d_rho);
+    ndup_f     = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterNonDuplicated>(f);
+    ndup_eatom = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterNonDuplicated>(d_eatom);
+    ndup_vatom = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterNonDuplicated>(d_vatom);
+  }
 
-  k_list->clean_copy();
   copymode = 1;
 
   // zero out density
@@ -150,6 +158,9 @@ void PairEAMKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
         Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagPairEAMKernelA<HALFTHREAD,0> >(0,inum),*this);
       }
     }
+
+    if (need_dup)
+      Kokkos::Experimental::contribute(d_rho, dup_rho);
 
     // communicate and sum densities (on the host)
 
@@ -231,6 +242,9 @@ void PairEAMKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
     }
   }
 
+  if (need_dup)
+    Kokkos::Experimental::contribute(f, dup_f);
+
   if (eflag_global) eng_vdwl += ev.evdwl;
   if (vflag_global) {
     virial[0] += ev.v[0];
@@ -244,16 +258,28 @@ void PairEAMKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
   if (vflag_fdotr) pair_virial_fdotr_compute(this);
 
   if (eflag_atom) {
+    if (need_dup)
+      Kokkos::Experimental::contribute(d_eatom, dup_eatom);
     k_eatom.template modify<DeviceType>();
     k_eatom.template sync<LMPHostType>();
   }
 
   if (vflag_atom) {
+    if (need_dup)
+      Kokkos::Experimental::contribute(d_vatom, dup_vatom);
     k_vatom.template modify<DeviceType>();
     k_vatom.template sync<LMPHostType>();
   }
 
   copymode = 0;
+
+  // free duplicated memory
+  if (need_dup) {
+    dup_rho   = decltype(dup_rho)();
+    dup_f     = decltype(dup_f)();
+    dup_eatom = decltype(dup_eatom)();
+    dup_vatom = decltype(dup_vatom)();
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -281,11 +307,9 @@ void PairEAMKokkos<DeviceType>::init_style()
   if (neighflag == FULL) {
     neighbor->requests[irequest]->full = 1;
     neighbor->requests[irequest]->half = 0;
-    neighbor->requests[irequest]->full_cluster = 0;
   } else if (neighflag == HALF || neighflag == HALFTHREAD) {
     neighbor->requests[irequest]->full = 0;
     neighbor->requests[irequest]->half = 1;
-    neighbor->requests[irequest]->full_cluster = 0;
   } else {
     error->all(FLERR,"Cannot use chosen neighbor list style with pair eam/kk");
   }
@@ -327,9 +351,9 @@ void PairEAMKokkos<DeviceType>::file2array()
   k_type2z2r.template modify<LMPHostType>();
   k_type2z2r.template sync<DeviceType>();
 
-  d_type2frho = k_type2frho.d_view;
-  d_type2rhor = k_type2rhor.d_view;
-  d_type2z2r = k_type2z2r.d_view;
+  d_type2frho = k_type2frho.template view<DeviceType>();
+  d_type2rhor = k_type2rhor.template view<DeviceType>();
+  d_type2z2r = k_type2z2r.template view<DeviceType>();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -340,81 +364,64 @@ void PairEAMKokkos<DeviceType>::array2spline()
   rdr = 1.0/dr;
   rdrho = 1.0/drho;
 
-  tdual_ffloat4 k_frho_spline_a = tdual_ffloat4("pair:frho_a",nfrho,nrho+1);
-  tdual_ffloat4 k_rhor_spline_a = tdual_ffloat4("pair:rhor_a",nrhor,nr+1);
-  tdual_ffloat4 k_z2r_spline_a = tdual_ffloat4("pair:z2r_a",nz2r,nr+1);
-  tdual_ffloat4 k_frho_spline_b = tdual_ffloat4("pair:frho_b",nfrho,nrho+1);
-  tdual_ffloat4 k_rhor_spline_b = tdual_ffloat4("pair:rhor_b",nrhor,nr+1);
-  tdual_ffloat4 k_z2r_spline_b = tdual_ffloat4("pair:z2r_b",nz2r,nr+1);
+  tdual_ffloat_2d_n7 k_frho_spline = tdual_ffloat_2d_n7("pair:frho",nfrho,nrho+1);
+  tdual_ffloat_2d_n7 k_rhor_spline = tdual_ffloat_2d_n7("pair:rhor",nrhor,nr+1);
+  tdual_ffloat_2d_n7 k_z2r_spline = tdual_ffloat_2d_n7("pair:z2r",nz2r,nr+1);
 
-  t_host_ffloat4 h_frho_spline_a = k_frho_spline_a.h_view;
-  t_host_ffloat4 h_rhor_spline_a = k_rhor_spline_a.h_view;
-  t_host_ffloat4 h_z2r_spline_a =  k_z2r_spline_a.h_view;
-  t_host_ffloat4 h_frho_spline_b = k_frho_spline_b.h_view;
-  t_host_ffloat4 h_rhor_spline_b = k_rhor_spline_b.h_view;
-  t_host_ffloat4 h_z2r_spline_b =  k_z2r_spline_b.h_view;
+  t_host_ffloat_2d_n7 h_frho_spline = k_frho_spline.h_view;
+  t_host_ffloat_2d_n7 h_rhor_spline = k_rhor_spline.h_view;
+  t_host_ffloat_2d_n7 h_z2r_spline = k_z2r_spline.h_view;
 
   for (int i = 0; i < nfrho; i++)
-    interpolate(nrho,drho,frho[i],h_frho_spline_a,h_frho_spline_b,i);
-  k_frho_spline_a.template modify<LMPHostType>();
-  k_frho_spline_a.template sync<DeviceType>();
-  k_frho_spline_b.template modify<LMPHostType>();
-  k_frho_spline_b.template sync<DeviceType>();
+    interpolate(nrho,drho,frho[i],h_frho_spline,i);
+  k_frho_spline.template modify<LMPHostType>();
+  k_frho_spline.template sync<DeviceType>();
 
   for (int i = 0; i < nrhor; i++)
-    interpolate(nr,dr,rhor[i],h_rhor_spline_a,h_rhor_spline_b,i);
-  k_rhor_spline_a.template modify<LMPHostType>();
-  k_rhor_spline_a.template sync<DeviceType>();
-  k_rhor_spline_b.template modify<LMPHostType>();
-  k_rhor_spline_b.template sync<DeviceType>();
+    interpolate(nr,dr,rhor[i],h_rhor_spline,i);
+  k_rhor_spline.template modify<LMPHostType>();
+  k_rhor_spline.template sync<DeviceType>();
 
   for (int i = 0; i < nz2r; i++)
-    interpolate(nr,dr,z2r[i],h_z2r_spline_a,h_z2r_spline_b,i);
-  k_z2r_spline_a.template modify<LMPHostType>();
-  k_z2r_spline_a.template sync<DeviceType>();
-  k_z2r_spline_b.template modify<LMPHostType>();
-  k_z2r_spline_b.template sync<DeviceType>();
+    interpolate(nr,dr,z2r[i],h_z2r_spline,i);
+  k_z2r_spline.template modify<LMPHostType>();
+  k_z2r_spline.template sync<DeviceType>();
 
-  d_frho_spline_a = k_frho_spline_a.d_view;
-  d_rhor_spline_a = k_rhor_spline_a.d_view;
-  d_z2r_spline_a = k_z2r_spline_a.d_view;
-  d_frho_spline_b = k_frho_spline_b.d_view;
-  d_rhor_spline_b = k_rhor_spline_b.d_view;
-  d_z2r_spline_b = k_z2r_spline_b.d_view;
-
-
+  d_frho_spline = k_frho_spline.template view<DeviceType>();
+  d_rhor_spline = k_rhor_spline.template view<DeviceType>();
+  d_z2r_spline = k_z2r_spline.template view<DeviceType>();
 }
 
 /* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
-void PairEAMKokkos<DeviceType>::interpolate(int n, double delta, double *f, t_host_ffloat4 h_spline_a, t_host_ffloat4 h_spline_b, int i)
+void PairEAMKokkos<DeviceType>::interpolate(int n, double delta, double *f, t_host_ffloat_2d_n7 h_spline, int i)
 {
-  for (int m = 1; m <= n; m++) h_spline_b(i,m).w = f[m];
+  for (int m = 1; m <= n; m++) h_spline(i,m,6) = f[m];
 
-  h_spline_b(i,1).z = h_spline_b(i,2).w - h_spline_b(i,1).w;
-  h_spline_b(i,2).z = 0.5 * (h_spline_b(i,3).w-h_spline_b(i,1).w);
-  h_spline_b(i,n-1).z = 0.5 * (h_spline_b(i,n).w-h_spline_b(i,n-2).w);
-  h_spline_b(i,n).z = h_spline_b(i,n).w - h_spline_b(i,n-1).w;
+  h_spline(i,1,5) = h_spline(i,2,6) - h_spline(i,1,6);
+  h_spline(i,2,5) = 0.5 * (h_spline(i,3,6)-h_spline(i,1,6));
+  h_spline(i,n-1,5) = 0.5 * (h_spline(i,n,6)-h_spline(i,n-2,6));
+  h_spline(i,n,5) = h_spline(i,n,6) - h_spline(i,n-1,6);
 
   for (int m = 3; m <= n-2; m++)
-    h_spline_b(i,m).z = ((h_spline_b(i,m-2).w-h_spline_b(i,m+2).w) +
-                    8.0*(h_spline_b(i,m+1).w-h_spline_b(i,m-1).w)) / 12.0;
+    h_spline(i,m,5) = ((h_spline(i,m-2,6)-h_spline(i,m+2,6)) +
+                    8.0*(h_spline(i,m+1,6)-h_spline(i,m-1,6))) / 12.0;
 
   for (int m = 1; m <= n-1; m++) {
-    h_spline_b(i,m).y = 3.0*(h_spline_b(i,m+1).w-h_spline_b(i,m).w) -
-      2.0*h_spline_b(i,m).z - h_spline_b(i,m+1).z;
-    h_spline_b(i,m).x = h_spline_b(i,m).z + h_spline_b(i,m+1).z -
-      2.0*(h_spline_b(i,m+1).w-h_spline_b(i,m).w);
+    h_spline(i,m,4) = 3.0*(h_spline(i,m+1,6)-h_spline(i,m,6)) -
+      2.0*h_spline(i,m,5) - h_spline(i,m+1,5);
+    h_spline(i,m,3) = h_spline(i,m,5) + h_spline(i,m+1,5) -
+      2.0*(h_spline(i,m+1,6)-h_spline(i,m,6));
   }
 
-  h_spline_b(i,n).y = 0.0;
-  h_spline_b(i,n).x = 0.0;
+  h_spline(i,n,4) = 0.0;
+  h_spline(i,n,3) = 0.0;
 
   for (int m = 1; m <= n; m++) {
-    h_spline_a(i,m).z = h_spline_b(i,m).z/delta;
-    h_spline_a(i,m).y = 2.0*h_spline_b(i,m).y/delta;
-    h_spline_a(i,m).x = 3.0*h_spline_b(i,m).x/delta;
+    h_spline(i,m,2) = h_spline(i,m,5)/delta;
+    h_spline(i,m,1) = 2.0*h_spline(i,m,4)/delta;
+    h_spline(i,m,0) = 3.0*h_spline(i,m,3)/delta;
   }
 }
 
@@ -427,8 +434,7 @@ int PairEAMKokkos<DeviceType>::pack_forward_comm_kokkos(int n, DAT::tdual_int_2d
   d_sendlist = k_sendlist.view<DeviceType>();
   iswap = iswap_in;
   v_buf = buf.view<DeviceType>();
-  Kokkos::parallel_for(Kokkos::RangePolicy<LMPDeviceType, TagPairEAMPackForwardComm>(0,n),*this);
-  DeviceType::fence();
+  Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagPairEAMPackForwardComm>(0,n),*this);
   return n;
 }
 
@@ -446,8 +452,7 @@ void PairEAMKokkos<DeviceType>::unpack_forward_comm_kokkos(int n, int first_in, 
 {
   first = first_in;
   v_buf = buf.view<DeviceType>();
-  Kokkos::parallel_for(Kokkos::RangePolicy<LMPDeviceType, TagPairEAMUnpackForwardComm>(0,n),*this);
-  DeviceType::fence();
+  Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagPairEAMUnpackForwardComm>(0,n),*this);
 }
 
 template<class DeviceType>
@@ -527,8 +532,10 @@ void PairEAMKokkos<DeviceType>::operator()(TagPairEAMKernelA<NEIGHFLAG,NEWTON_PA
   // rho = density at each atom
   // loop over neighbors of my atoms
 
-  // The rho array is atomic for Half/Thread neighbor style
-  Kokkos::View<F_FLOAT*, typename DAT::t_f_array::array_layout,DeviceType,Kokkos::MemoryTraits<AtomicF<NEIGHFLAG>::value> > rho = v_rho;
+  // The rho array is duplicated for OpenMP, atomic for CUDA, and neither for Serial
+
+  auto v_rho = ScatterViewHelper<NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_rho),decltype(ndup_rho)>::get(dup_rho,ndup_rho);
+  auto a_rho = v_rho.template access<AtomicDup<NEIGHFLAG,DeviceType>::value>();
 
   const int i = d_ilist[ii];
   const X_FLOAT xtmp = x(i,0);
@@ -558,18 +565,17 @@ void PairEAMKokkos<DeviceType>::operator()(TagPairEAMKernelA<NEIGHFLAG,NEWTON_PA
       p -= m;
       p = MIN(p,1.0);
       const int d_type2rhor_ji = d_type2rhor(jtype,itype);
-      const F_FLOAT4 rhor = d_rhor_spline_b(d_type2rhor_ji,m);
-      rhotmp += ((rhor.x*p + rhor.y)*p + rhor.z)*p + rhor.w;
-
+      rhotmp += ((d_rhor_spline(d_type2rhor_ji,m,3)*p + d_rhor_spline(d_type2rhor_ji,m,4))*p +
+                  d_rhor_spline(d_type2rhor_ji,m,5))*p + d_rhor_spline(d_type2rhor_ji,m,6);
       if (NEWTON_PAIR || j < nlocal) {
         const int d_type2rhor_ij = d_type2rhor(itype,jtype);
-        const F_FLOAT4 rhor = d_rhor_spline_b(d_type2rhor_ij,m);
-        rho[j] += ((rhor.x*p + rhor.y)*p + rhor.z)*p + rhor.w;
+        a_rho[j] += ((d_rhor_spline(d_type2rhor_ij,m,3)*p + d_rhor_spline(d_type2rhor_ij,m,4))*p +
+                      d_rhor_spline(d_type2rhor_ij,m,5))*p + d_rhor_spline(d_type2rhor_ij,m,6);
       }
     }
 
   }
-  rho[i] += rhotmp;
+  a_rho[i] += rhotmp;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -593,11 +599,10 @@ void PairEAMKokkos<DeviceType>::operator()(TagPairEAMKernelB<EFLAG>, const int &
   p -= m;
   p = MIN(p,1.0);
   const int d_type2frho_i = d_type2frho[itype];
-  const F_FLOAT4 frho = d_frho_spline_a(d_type2frho_i,m);
-  d_fp[i] = (frho.x*p + frho.y)*p + frho.z;
+  d_fp[i] = (d_frho_spline(d_type2frho_i,m,0)*p + d_frho_spline(d_type2frho_i,m,1))*p + d_frho_spline(d_type2frho_i,m,2);
   if (EFLAG) {
-    const F_FLOAT4 frho_b = d_frho_spline_b(d_type2frho_i,m);
-    F_FLOAT phi = ((frho_b.x*p + frho_b.y)*p + frho_b.z)*p + frho_b.w;
+    F_FLOAT phi = ((d_frho_spline(d_type2frho_i,m,3)*p + d_frho_spline(d_type2frho_i,m,4))*p +
+                    d_frho_spline(d_type2frho_i,m,5))*p + d_frho_spline(d_type2frho_i,m,6);
     if (d_rho[i] > rhomax) phi += d_fp[i] * (d_rho[i]-rhomax);
     if (eflag_global) ev.evdwl += phi;
     if (eflag_atom) d_eatom[i] += phi;
@@ -651,8 +656,8 @@ void PairEAMKokkos<DeviceType>::operator()(TagPairEAMKernelAB<EFLAG>, const int 
       p -= m;
       p = MIN(p,1.0);
       const int d_type2rhor_ji = d_type2rhor(jtype,itype);
-      const F_FLOAT4 rhor = d_rhor_spline_b(d_type2rhor_ji,m);
-      rhotmp += ((rhor.x*p + rhor.y)*p + rhor.z)*p + rhor.w;
+      rhotmp += ((d_rhor_spline(d_type2rhor_ji,m,3)*p + d_rhor_spline(d_type2rhor_ji,m,4))*p +
+                  d_rhor_spline(d_type2rhor_ji,m,5))*p + d_rhor_spline(d_type2rhor_ji,m,6);
     }
 
   }
@@ -669,11 +674,10 @@ void PairEAMKokkos<DeviceType>::operator()(TagPairEAMKernelAB<EFLAG>, const int 
   p -= m;
   p = MIN(p,1.0);
   const int d_type2frho_i = d_type2frho[itype];
-  const F_FLOAT4 frho = d_frho_spline_a(d_type2frho_i,m);
-  d_fp[i] = (frho.x*p + frho.y)*p + frho.z;
+  d_fp[i] = (d_frho_spline(d_type2frho_i,m,0)*p + d_frho_spline(d_type2frho_i,m,1))*p + d_frho_spline(d_type2frho_i,m,2);
   if (EFLAG) {
-    const F_FLOAT4 frho_b = d_frho_spline_b(d_type2frho_i,m);
-    F_FLOAT phi = ((frho_b.x*p + frho_b.y)*p + frho_b.z)*p + frho_b.w;
+    F_FLOAT phi = ((d_frho_spline(d_type2frho_i,m,3)*p + d_frho_spline(d_type2frho_i,m,4))*p +
+                    d_frho_spline(d_type2frho_i,m,5))*p + d_frho_spline(d_type2frho_i,m,6);
     if (d_rho[i] > rhomax) phi += d_fp[i] * (d_rho[i]-rhomax);
     if (eflag_global) ev.evdwl += phi;
     if (eflag_atom) d_eatom[i] += phi;
@@ -697,8 +701,10 @@ template<int NEIGHFLAG, int NEWTON_PAIR, int EVFLAG>
 KOKKOS_INLINE_FUNCTION
 void PairEAMKokkos<DeviceType>::operator()(TagPairEAMKernelC<NEIGHFLAG,NEWTON_PAIR,EVFLAG>, const int &ii, EV_FLOAT& ev) const {
 
-  // The f array is atomic for Half/Thread neighbor style
-  Kokkos::View<F_FLOAT*[3], typename DAT::t_f_array::array_layout,DeviceType,Kokkos::MemoryTraits<AtomicF<NEIGHFLAG>::value> > a_f = f;
+  // The f array is duplicated for OpenMP, atomic for CUDA, and neither for Serial
+
+  auto v_f = ScatterViewHelper<NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_f),decltype(ndup_f)>::get(dup_f,ndup_f);
+  auto a_f = v_f.template access<AtomicDup<NEIGHFLAG,DeviceType>::value>();
 
   const int i = d_ilist[ii];
   const X_FLOAT xtmp = x(i,0);
@@ -742,18 +748,16 @@ void PairEAMKokkos<DeviceType>::operator()(TagPairEAMKernelC<NEIGHFLAG,NEWTON_PA
       //   hence embed' = Fi(sum rho_ij) rhojp + Fj(sum rho_ji) rhoip
 
       const int d_type2rhor_ij = d_type2rhor(itype,jtype);
-      const F_FLOAT4 rhor_ij = d_rhor_spline_a(d_type2rhor_ij,m);
-      const F_FLOAT rhoip = (rhor_ij.x*p + rhor_ij.y)*p + rhor_ij.z;
-
+      const F_FLOAT rhoip = (d_rhor_spline(d_type2rhor_ij,m,0)*p + d_rhor_spline(d_type2rhor_ij,m,1))*p +
+                             d_rhor_spline(d_type2rhor_ij,m,2);
       const int d_type2rhor_ji = d_type2rhor(jtype,itype);
-      const F_FLOAT4 rhor_ji = d_rhor_spline_a(d_type2rhor_ji,m);
-      const F_FLOAT rhojp = (rhor_ji.x*p + rhor_ji.y)*p + rhor_ji.z;
-
+      const F_FLOAT rhojp = (d_rhor_spline(d_type2rhor_ji,m,0)*p + d_rhor_spline(d_type2rhor_ji,m,1))*p +
+                             d_rhor_spline(d_type2rhor_ji,m,2);
       const int d_type2z2r_ij = d_type2z2r(itype,jtype);
-      const F_FLOAT4 z2r_a = d_z2r_spline_a(d_type2z2r_ij,m);
-      const F_FLOAT z2p = (z2r_a.x*p + z2r_a.y)*p + z2r_a.z;
-      const F_FLOAT4 z2r_b = d_z2r_spline_b(d_type2z2r_ij,m);
-      const F_FLOAT z2 = ((z2r_b.x*p + z2r_b.y)*p + z2r_b.z)*p + z2r_b.w;
+      const F_FLOAT z2p = (d_z2r_spline(d_type2z2r_ij,m,0)*p + d_z2r_spline(d_type2z2r_ij,m,1))*p +
+                           d_z2r_spline(d_type2z2r_ij,m,2);
+      const F_FLOAT z2 = ((d_z2r_spline(d_type2z2r_ij,m,3)*p + d_z2r_spline(d_type2z2r_ij,m,4))*p +
+                           d_z2r_spline(d_type2z2r_ij,m,5))*p + d_z2r_spline(d_type2z2r_ij,m,6);
 
       const F_FLOAT recip = 1.0/r;
       const F_FLOAT phi = z2*recip;
@@ -807,18 +811,22 @@ void PairEAMKokkos<DeviceType>::ev_tally(EV_FLOAT &ev, const int &i, const int &
   const int EFLAG = eflag;
   const int VFLAG = vflag_either;
 
-  // The eatom and vatom arrays are atomic for Half/Thread neighbor style
-  Kokkos::View<E_FLOAT*, typename DAT::t_efloat_1d::array_layout,DeviceType,Kokkos::MemoryTraits<AtomicF<NEIGHFLAG>::value> > v_eatom = k_eatom.view<DeviceType>();
-  Kokkos::View<F_FLOAT*[6], typename DAT::t_virial_array::array_layout,DeviceType,Kokkos::MemoryTraits<AtomicF<NEIGHFLAG>::value> > v_vatom = k_vatom.view<DeviceType>();
+  // The eatom and vatom arrays are duplicated for OpenMP, atomic for CUDA, and neither for Serial
+
+  auto v_eatom = ScatterViewHelper<NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_eatom),decltype(ndup_eatom)>::get(dup_eatom,ndup_eatom);
+  auto a_eatom = v_eatom.template access<AtomicDup<NEIGHFLAG,DeviceType>::value>();
+
+  auto v_vatom = ScatterViewHelper<NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_vatom),decltype(ndup_vatom)>::get(dup_vatom,ndup_vatom);
+  auto a_vatom = v_vatom.template access<AtomicDup<NEIGHFLAG,DeviceType>::value>();
 
   if (EFLAG) {
     if (eflag_atom) {
       const E_FLOAT epairhalf = 0.5 * epair;
       if (NEIGHFLAG!=FULL) {
-        if (NEWTON_PAIR || i < nlocal) v_eatom[i] += epairhalf;
-        if (NEWTON_PAIR || j < nlocal) v_eatom[j] += epairhalf;
+        if (NEWTON_PAIR || i < nlocal) a_eatom[i] += epairhalf;
+        if (NEWTON_PAIR || j < nlocal) a_eatom[j] += epairhalf;
       } else {
-        v_eatom[i] += epairhalf;
+        a_eatom[i] += epairhalf;
       }
     }
   }
@@ -862,28 +870,28 @@ void PairEAMKokkos<DeviceType>::ev_tally(EV_FLOAT &ev, const int &i, const int &
     if (vflag_atom) {
       if (NEIGHFLAG!=FULL) {
         if (NEWTON_PAIR || i < nlocal) {
-          v_vatom(i,0) += 0.5*v0;
-          v_vatom(i,1) += 0.5*v1;
-          v_vatom(i,2) += 0.5*v2;
-          v_vatom(i,3) += 0.5*v3;
-          v_vatom(i,4) += 0.5*v4;
-          v_vatom(i,5) += 0.5*v5;
+          a_vatom(i,0) += 0.5*v0;
+          a_vatom(i,1) += 0.5*v1;
+          a_vatom(i,2) += 0.5*v2;
+          a_vatom(i,3) += 0.5*v3;
+          a_vatom(i,4) += 0.5*v4;
+          a_vatom(i,5) += 0.5*v5;
         }
         if (NEWTON_PAIR || j < nlocal) {
-        v_vatom(j,0) += 0.5*v0;
-        v_vatom(j,1) += 0.5*v1;
-        v_vatom(j,2) += 0.5*v2;
-        v_vatom(j,3) += 0.5*v3;
-        v_vatom(j,4) += 0.5*v4;
-        v_vatom(j,5) += 0.5*v5;
+        a_vatom(j,0) += 0.5*v0;
+        a_vatom(j,1) += 0.5*v1;
+        a_vatom(j,2) += 0.5*v2;
+        a_vatom(j,3) += 0.5*v3;
+        a_vatom(j,4) += 0.5*v4;
+        a_vatom(j,5) += 0.5*v5;
         }
       } else {
-        v_vatom(i,0) += 0.5*v0;
-        v_vatom(i,1) += 0.5*v1;
-        v_vatom(i,2) += 0.5*v2;
-        v_vatom(i,3) += 0.5*v3;
-        v_vatom(i,4) += 0.5*v4;
-        v_vatom(i,5) += 0.5*v5;
+        a_vatom(i,0) += 0.5*v0;
+        a_vatom(i,1) += 0.5*v1;
+        a_vatom(i,2) += 0.5*v2;
+        a_vatom(i,3) += 0.5*v3;
+        a_vatom(i,4) += 0.5*v4;
+        a_vatom(i,5) += 0.5*v5;
       }
     }
   }
@@ -895,4 +903,3 @@ template class PairEAMKokkos<LMPDeviceType>;
 template class PairEAMKokkos<LMPHostType>;
 #endif
 }
-

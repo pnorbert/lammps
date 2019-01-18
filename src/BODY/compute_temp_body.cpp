@@ -17,7 +17,7 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <string.h>
+#include <cstring>
 #include "compute_temp_body.h"
 #include "math_extra.h"
 #include "atom.h"
@@ -37,7 +37,7 @@ enum{ROTATE,ALL};
 /* ---------------------------------------------------------------------- */
 
 ComputeTempBody::ComputeTempBody(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg), id_bias(NULL), tbias(NULL), avec(NULL)
 {
   if (narg < 3) error->all(FLERR,"Illegal compute temp/body command");
 

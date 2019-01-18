@@ -17,8 +17,8 @@
             "Parallel Unconstrained Min", Plantenga, SAND98-8201
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <string.h>
+#include <cmath>
+#include <cstring>
 #include "atom.h"
 #include "fix_minimize.h"
 #include "min_hftn.h"
@@ -138,8 +138,11 @@ void MinHFTN::setup_style()
   //---- ALLOCATE MEMORY FOR EXTRA GLOBAL DEGREES OF FREEDOM.
   //---- THE FIX MODULE TAKES CARE OF THE FIRST VECTOR, X0 (XK).
   if (nextra_global) {
-    for (int  i = 1; i < NUM_HFTN_ATOM_BASED_VECTORS; i++)
+    for (int  i = 1; i < NUM_HFTN_ATOM_BASED_VECTORS; i++) {
       _daExtraGlobal[i] = new double[nextra_global];
+      for (int  j = 0; j < nextra_global; j++)
+        _daExtraGlobal[i][j] = 0.0;
+    }
   }
 
   //---- ALLOCATE MEMORY FOR EXTRA PER-ATOM DEGREES OF FREEDOM.

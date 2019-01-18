@@ -36,8 +36,6 @@ class ComputePropertyAtom : public Compute {
   int nvalues;
   int nmax;
   int *index;
-  double *vector;
-  double **array;
   double *buf;
   class AtomVecEllipsoid *avec_ellipsoid;
   class AtomVecLine *avec_line;
@@ -85,6 +83,14 @@ class ComputePropertyAtom : public Compute {
   void pack_mu(int);
   void pack_radius(int);
   void pack_diameter(int);
+
+  void pack_spx(int);		// pack magnetic variables
+  void pack_spy(int);
+  void pack_spz(int);
+  void pack_sp(int);
+  void pack_fmx(int);
+  void pack_fmy(int);
+  void pack_fmz(int);
 
   void pack_omegax(int);
   void pack_omegay(int);

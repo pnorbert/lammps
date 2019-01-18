@@ -28,22 +28,25 @@ class PairSNAP : public Pair {
 public:
   PairSNAP(class LAMMPS *);
   ~PairSNAP();
-  void compute(int, int);
+  virtual void compute(int, int);
   void compute_regular(int, int);
   void compute_optimized(int, int);
   void settings(int, char **);
-  void coeff(int, char **);
-  void init_style();
-  double init_one(int, int);
-  double memory_usage();
+  virtual void coeff(int, char **);
+  virtual void init_style();
+  virtual double init_one(int, int);
+  virtual double memory_usage();
+
+  double rcutfac, quadraticflag; // declared public to workaround gcc 4.9
+  int ncoeff;                    //  compiler bug, manifest in KOKKOS package
 
 protected:
-  int ncoeff;
+  int ncoeffq, ncoeffall;
   double **bvec, ***dbvec;
   class SNA** sna;
   int nmax;
   int nthreads;
-  void allocate();
+  virtual void allocate();
   void read_files(char *, char *);
   inline int equal(double* x,double* y);
   inline double dist2(double* x,double* y);
@@ -89,7 +92,6 @@ protected:
   //  timespec starttime, endtime;
   double timers[4];
 #endif
-  double gamma;
 
   double rcutmax;               // max cutoff for all elements
   int nelements;                // # of unique elements
@@ -98,10 +100,9 @@ protected:
   double *wjelem;               // elements weights
   double **coeffelem;           // element bispectrum coefficients
   int *map;                     // mapping from atom types to elements
-  int twojmax, diagonalstyle, switchflag;
-  double rcutfac, rfac0, rmin0, wj1, wj2;
+  int twojmax, diagonalstyle, switchflag, bzeroflag;
+  double rfac0, rmin0, wj1, wj2;
   int rcutfacflag, twojmaxflag; // flags for required parameters
-  int gammaoneflag;              // 1 if parameter gamma is 1
 };
 
 }
@@ -136,6 +137,10 @@ E: Incorrect args for pair coefficients
 
 Self-explanatory.  Check the input script or data file.
 
+E: Incorrect SNAP coeff file
+
+UNDOCUMENTED
+
 E: Incorrect SNAP parameter file
 
 The file cannot be parsed correctly, check its internal syntax.
@@ -167,5 +172,9 @@ path and name are correct.
 E: Incorrect format in SNAP parameter file
 
 Incorrect number of words per line in the parameter file.
+
+E: Did not find all elements in SNAP coefficient file.
+
+One or more elements listed in the pair_coeff command were not found in the coefficient file.
 
 */

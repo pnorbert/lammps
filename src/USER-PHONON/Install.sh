@@ -3,6 +3,10 @@
 
 mode=$1
 
+# enforce using portable C locale
+LC_ALL=C
+export LC_ALL
+
 # arg1 = file, arg2 = file it depends on
 
 action () {
@@ -21,6 +25,16 @@ action () {
     fi
   fi
 }
+
+# USER-PHONON uses the parallel FFT wrapper used in PPPM,
+# so we must require the KSPACE package to be installed.
+
+if (test $1 = 1) then
+  if (test ! -e ../fft3d_wrap.h) then
+    echo "Must install KSPACE package with USER-PHONON"
+    exit 1
+  fi
+fi
 
 # list of files with optional dependcies
 

@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
+#include <cstring>
 #include "compute_property_local.h"
 #include "atom.h"
 #include "atom_vec.h"
@@ -34,7 +34,8 @@ enum{TYPE,RADIUS};
 /* ---------------------------------------------------------------------- */
 
 ComputePropertyLocal::ComputePropertyLocal(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg),
+  vlocal(NULL), alocal(NULL), indices(NULL), pack_choice(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal compute property/local command");
 
@@ -221,7 +222,7 @@ ComputePropertyLocal::ComputePropertyLocal(LAMMPS *lmp, int narg, char **arg) :
 
   while (iarg < narg) {
     if (strcmp(arg[iarg],"cutoff") == 0) {
-      if (iarg+2 > narg) 
+      if (iarg+2 > narg)
         error->all(FLERR,"Illegal compute property/local command");
       if (strcmp(arg[iarg+1],"type") == 0) cutstyle = TYPE;
       else if (strcmp(arg[iarg+1],"radius") == 0) cutstyle = RADIUS;
@@ -253,9 +254,8 @@ ComputePropertyLocal::ComputePropertyLocal(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR,"Compute property/local requires atom attribute radius");
 
   nmax = 0;
-  vector = NULL;
-  array = NULL;
-  indices = NULL;
+  vlocal = NULL;
+  alocal = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -263,8 +263,8 @@ ComputePropertyLocal::ComputePropertyLocal(LAMMPS *lmp, int narg, char **arg) :
 ComputePropertyLocal::~ComputePropertyLocal()
 {
   delete [] pack_choice;
-  memory->destroy(vector);
-  memory->destroy(array);
+  memory->destroy(vlocal);
+  memory->destroy(alocal);
   memory->destroy(indices);
 }
 
@@ -280,12 +280,16 @@ void ComputePropertyLocal::init()
   }
 
   // for NEIGH/PAIR need an occasional half neighbor list
+  // set size to same value as request made by force->pair
+  // this should enable it to always be a copy list  (e.g. for granular pstyle)
 
   if (kindflag == NEIGH || kindflag == PAIR) {
     int irequest = neighbor->request(this,instance_me);
     neighbor->requests[irequest]->pair = 0;
     neighbor->requests[irequest]->compute = 1;
     neighbor->requests[irequest]->occasional = 1;
+    NeighRequest *pairrequest = neighbor->find_request((void *) force->pair);
+    if (pairrequest) neighbor->requests[irequest]->size = pairrequest->size;
   }
 
   // do initial memory allocation so that memory_usage() is correct
@@ -304,7 +308,7 @@ void ComputePropertyLocal::init()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputePropertyLocal::init_list(int id, NeighList *ptr)
+void ComputePropertyLocal::init_list(int /*id*/, NeighList *ptr)
 {
   list = ptr;
 }
@@ -337,10 +341,10 @@ void ComputePropertyLocal::compute_local()
   // fill vector or array with local values
 
   if (nvalues == 1) {
-    buf = vector;
+    buf = vlocal;
     (this->*pack_choice[0])(0);
   } else {
-    if (array) buf = &array[0][0];
+    if (alocal) buf = &alocal[0][0];
     for (int n = 0; n < nvalues; n++)
       (this->*pack_choice[n])(n);
   }
@@ -622,17 +626,18 @@ int ComputePropertyLocal::count_impropers(int flag)
 
 void ComputePropertyLocal::reallocate(int n)
 {
-  // grow vector or array and indices array
+  // grow vector_local or array_local, also indices
 
   while (nmax < n) nmax += DELTA;
+
   if (nvalues == 1) {
-    memory->destroy(vector);
-    memory->create(vector,nmax,"property/local:vector");
-    vector_local = vector;
+    memory->destroy(vlocal);
+    memory->create(vlocal,nmax,"property/local:vector_local");
+    vector_local = vlocal;
   } else {
-    memory->destroy(array);
-    memory->create(array,nmax,nvalues,"property/local:array");
-    array_local = array;
+    memory->destroy(alocal);
+    memory->create(alocal,nmax,nvalues,"property/local:array_local");
+    array_local = alocal;
   }
 
   memory->destroy(indices);

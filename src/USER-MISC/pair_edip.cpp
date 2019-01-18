@@ -21,11 +21,11 @@
        Phys. Rev. B 58, 2539 (1998)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <float.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cfloat>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_edip.h"
 #include "atom.h"
 #include "neighbor.h"
@@ -94,7 +94,7 @@ void PairEDIP::compute(int eflag, int vflag)
   int itype,jtype,ktype,ijparam,ikparam;
   double xtmp,ytmp,ztmp,evdwl;
   int *ilist,*jlist,*numneigh,**firstneigh;
-  register int preForceCoord_counter;
+  int preForceCoord_counter;
 
   double invR_ij;
   double invR_ik;
@@ -621,7 +621,7 @@ void PairEDIP::allocate()
    global settings
 ------------------------------------------------------------------------- */
 
-void PairEDIP::settings(int narg, char **arg)
+void PairEDIP::settings(int narg, char **/*arg*/)
 {
   if (narg != 0) error->all(FLERR,"Illegal pair_style command");
 }
@@ -798,6 +798,9 @@ void PairEDIP::coeff(int narg, char **arg)
     }
   }
 
+  if (nelements != 1)
+    error->all(FLERR,"Pair style edip only supports single element potentials");
+
   // read potential file and initialize potential parameters
 
   read_file(arg[2]);
@@ -836,7 +839,7 @@ void PairEDIP::coeff(int narg, char **arg)
 void PairEDIP::init_style()
 {
   if (force->newton_pair == 0)
-    error->all(FLERR,"Pair style EDIP requires newton pair on");
+    error->all(FLERR,"Pair style edip requires newton pair on");
 
   // need a full neighbor list
 
@@ -874,7 +877,7 @@ void PairEDIP::read_file(char *file)
     fp = force->open_potential(file);
     if (fp == NULL) {
       char str[128];
-      sprintf(str,"Cannot open EDIP potential file %s",file);
+      snprintf(str,128,"Cannot open EDIP potential file %s",file);
       error->one(FLERR,str);
     }
   }
@@ -1034,7 +1037,7 @@ void PairEDIP::setup_params()
     if (rtmp > cutmax) cutmax = rtmp;
   }
 
-  // this should be removed for multi species parametrizations
+  // this should be removed for multi species parameterization
 
   A = params[0].A;
   B = params[0].B;

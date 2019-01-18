@@ -16,10 +16,10 @@
                         for swapping atoms of different masses
 ------------------------------------------------------------------------- */
 
-#include <math.h>
+#include <cmath>
 #include <mpi.h>
-#include <string.h>
-#include <stdlib.h>
+#include <cstring>
+#include <cstdlib>
 #include "fix_viscosity.h"
 #include "atom.h"
 #include "domain.h"
@@ -37,7 +37,8 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixViscosity::FixViscosity(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  pos_index(NULL), neg_index(NULL), pos_delta(NULL), neg_delta(NULL)
 {
   if (narg < 7) error->all(FLERR,"Illegal fix viscosity command");
 

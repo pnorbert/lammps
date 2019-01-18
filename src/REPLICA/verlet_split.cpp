@@ -15,7 +15,7 @@
    Contributing authors: Yuxing Peng and Chris Knight (U Chicago)
 ------------------------------------------------------------------------- */
 
-#include <string.h>
+#include <cstring>
 #include "verlet_split.h"
 #include "universe.h"
 #include "neighbor.h"
@@ -43,7 +43,7 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 VerletSplit::VerletSplit(LAMMPS *lmp, int narg, char **arg) :
-  Verlet(lmp, narg, arg)
+  Verlet(lmp, narg, arg), qsize(NULL), qdisp(NULL), xsize(NULL), xdisp(NULL), f_kspace(NULL)
 {
   // error checks on partitions
 
@@ -239,13 +239,13 @@ void VerletSplit::init()
    servant partition only sets up KSpace calculation
 ------------------------------------------------------------------------- */
 
-void VerletSplit::setup()
+void VerletSplit::setup(int flag)
 {
   if (comm->me == 0 && screen)
     fprintf(screen,"Setting up Verlet/split run ...\n");
 
   if (!master) force->kspace->setup();
-  else Verlet::setup();
+  else Verlet::setup(flag);
 }
 
 /* ----------------------------------------------------------------------
@@ -344,7 +344,7 @@ void VerletSplit::run(int n)
         if (triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
         timer->stamp(Timer::COMM);
         if (n_pre_neighbor) modify->pre_neighbor();
-        neighbor->build();
+        neighbor->build(1);
         timer->stamp(Timer::NEIGH);
       }
     }

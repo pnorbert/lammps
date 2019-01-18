@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <string.h>
+#include <cmath>
+#include <cstring>
 #include "compute_rigid_local.h"
 #include "atom.h"
 #include "update.h"
@@ -33,7 +33,8 @@ enum{ID,MOL,MASS,X,Y,Z,XU,YU,ZU,VX,VY,VZ,FX,FY,FZ,IX,IY,IZ,
 /* ---------------------------------------------------------------------- */
 
 ComputeRigidLocal::ComputeRigidLocal(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg),
+  rstyle(NULL), idrigid(NULL), fixrigid(NULL), vlocal(NULL), alocal(NULL)
 {
   if (narg < 5) error->all(FLERR,"Illegal compute rigid/local command");
 
@@ -88,17 +89,16 @@ ComputeRigidLocal::ComputeRigidLocal(LAMMPS *lmp, int narg, char **arg) :
   }
 
   ncount = nmax = 0;
-  vector = NULL;
-  array = NULL;
-  fixrigid = NULL;
+  vlocal = NULL;
+  alocal = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
 
 ComputeRigidLocal::~ComputeRigidLocal()
 {
-  memory->destroy(vector);
-  memory->destroy(array);
+  memory->destroy(vlocal);
+  memory->destroy(alocal);
   delete [] idrigid;
   delete [] rstyle;
 }
@@ -170,8 +170,8 @@ int ComputeRigidLocal::compute_rigid(int flag)
     body = &fixrigid->body[ibody];
 
     if (flag) {
-      if (nvalues == 1) ptr = &vector[m];
-      else ptr = array[m];
+      if (nvalues == 1) ptr = &vlocal[m];
+      else ptr = alocal[m];
 
       for (n = 0; n < nvalues; n++) {
         switch (rstyle[n]) {
@@ -194,11 +194,11 @@ int ComputeRigidLocal::compute_rigid(int flag)
           ptr[n] = body->xcm[2];
           break;
         case XU:
-          ptr[n] = body->xcm[0] + 
+          ptr[n] = body->xcm[0] +
             ((body->image & IMGMASK) - IMGMAX) * xprd;
           break;
         case YU:
-          ptr[n] = body->xcm[1] + 
+          ptr[n] = body->xcm[1] +
             ((body->image >> IMGBITS & IMGMASK) - IMGMAX) * yprd;
           break;
         case ZU:
@@ -294,18 +294,18 @@ int ComputeRigidLocal::compute_rigid(int flag)
 
 void ComputeRigidLocal::reallocate(int n)
 {
-  // grow vector or array
+  // grow vector_local or array_local
 
   while (nmax < n) nmax += DELTA;
 
   if (nvalues == 1) {
-    memory->destroy(vector);
-    memory->create(vector,nmax,"rigid/local:vector");
-    vector_local = vector;
+    memory->destroy(vlocal);
+    memory->create(vlocal,nmax,"rigid/local:vector_local");
+    vector_local = vlocal;
   } else {
-    memory->destroy(array);
-    memory->create(array,nmax,nvalues,"rigid/local:array");
-    array_local = array;
+    memory->destroy(alocal);
+    memory->create(alocal,nmax,nvalues,"rigid/local:array_local");
+    array_local = alocal;
   }
 }
 

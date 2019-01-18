@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "fix_evaporate.h"
 #include "atom.h"
 #include "atom_vec.h"
@@ -35,7 +35,7 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixEvaporate::FixEvaporate(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg), idregion(NULL), list(NULL), mark(NULL), random(NULL)
 {
   if (narg < 7) error->all(FLERR,"Illegal fix evaporate command");
 

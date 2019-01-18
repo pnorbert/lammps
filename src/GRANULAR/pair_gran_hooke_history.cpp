@@ -15,10 +15,10 @@
    Contributing authors: Leo Silbert (SNL), Gary Grest (SNL)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_gran_hooke_history.h"
 #include "atom.h"
 #include "atom_vec.h"
@@ -27,7 +27,7 @@
 #include "update.h"
 #include "modify.h"
 #include "fix.h"
-#include "fix_shear_history.h"
+#include "fix_neigh_history.h"
 #include "comm.h"
 #include "neighbor.h"
 #include "neigh_list.h"
@@ -63,8 +63,10 @@ PairGranHookeHistory::PairGranHookeHistory(LAMMPS *lmp) : Pair(lmp)
 
 PairGranHookeHistory::~PairGranHookeHistory()
 {
+  if (copymode) return;
+
   delete [] svector;
-  if (fix_history) modify->delete_fix("SHEAR_HISTORY");
+  if (fix_history) modify->delete_fix("NEIGH_HISTORY");
 
   if (allocated) {
     memory->destroy(setflag);
@@ -137,8 +139,8 @@ void PairGranHookeHistory::compute(int eflag, int vflag)
   ilist = list->ilist;
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
-  firsttouch = listgranhistory->firstneigh;
-  firstshear = listgranhistory->firstdouble;
+  firsttouch = fix_history->firstflag;
+  firstshear = fix_history->firstvalue;
 
   // loop over neighbors of my atoms
 
@@ -371,8 +373,8 @@ void PairGranHookeHistory::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
@@ -400,37 +402,28 @@ void PairGranHookeHistory::init_style()
   if (comm->ghost_velocity == 0)
     error->all(FLERR,"Pair granular requires ghost atoms store velocity");
 
-  // need a granular neigh list and optionally a granular history neigh list
+  // need a granular neigh list
 
   int irequest = neighbor->request(this,instance_me);
-  neighbor->requests[irequest]->half = 0;
-  neighbor->requests[irequest]->gran = 1;
-  if (history) {
-    irequest = neighbor->request(this,instance_me);
-    neighbor->requests[irequest]->id = 1;
-    neighbor->requests[irequest]->half = 0;
-    neighbor->requests[irequest]->granhistory = 1;
-    neighbor->requests[irequest]->dnum = 3;
-  }
+  neighbor->requests[irequest]->size = 1;
+  if (history) neighbor->requests[irequest]->history = 1;
 
   dt = update->dt;
 
-  // if shear history is stored:
   // if first init, create Fix needed for storing shear history
 
   if (history && fix_history == NULL) {
     char dnumstr[16];
     sprintf(dnumstr,"%d",3);
     char **fixarg = new char*[4];
-    fixarg[0] = (char *) "SHEAR_HISTORY";
+    fixarg[0] = (char *) "NEIGH_HISTORY";
     fixarg[1] = (char *) "all";
-    fixarg[2] = (char *) "SHEAR_HISTORY";
+    fixarg[2] = (char *) "NEIGH_HISTORY";
     fixarg[3] = dnumstr;
     modify->add_fix(4,fixarg,1);
     delete [] fixarg;
-    fix_history = (FixShearHistory *) modify->fix[modify->nfix-1];
+    fix_history = (FixNeighHistory *) modify->fix[modify->nfix-1];
     fix_history->pair = this;
-    neighbor->requests[irequest]->fix_history = fix_history;
   }
 
   // check for FixFreeze and set freeze_group_bit
@@ -496,21 +489,10 @@ void PairGranHookeHistory::init_style()
   // set fix which stores history info
 
   if (history) {
-    int ifix = modify->find_fix("SHEAR_HISTORY");
-    if (ifix < 0) error->all(FLERR,"Could not find pair fix ID");
-    fix_history = (FixShearHistory *) modify->fix[ifix];
+    int ifix = modify->find_fix("NEIGH_HISTORY");
+    if (ifix < 0) error->all(FLERR,"Could not find pair fix neigh history ID");
+    fix_history = (FixNeighHistory *) modify->fix[ifix];
   }
-}
-
-/* ----------------------------------------------------------------------
-   neighbor callback to inform pair style of neighbor list to use
-   optional granular history list
-------------------------------------------------------------------------- */
-
-void PairGranHookeHistory::init_list(int id, NeighList *ptr)
-{
-  if (id == 0) list = ptr;
-  else if (id == 1) listgranhistory = ptr;
 }
 
 /* ----------------------------------------------------------------------
@@ -607,9 +589,9 @@ void PairGranHookeHistory::reset_dt()
 
 /* ---------------------------------------------------------------------- */
 
-double PairGranHookeHistory::single(int i, int j, int itype, int jtype,
+double PairGranHookeHistory::single(int i, int j, int /*itype*/, int /*jtype*/,
                                     double rsq,
-                                    double factor_coul, double factor_lj,
+                                    double /*factor_coul*/, double /*factor_lj*/,
                                     double &fforce)
 {
   double radi,radj,radsum;
@@ -706,7 +688,7 @@ double PairGranHookeHistory::single(int i, int j, int itype, int jtype,
 
   int jnum = list->numneigh[i];
   int *jlist = list->firstneigh[i];
-  double *allshear = list->listgranhistory->firstdouble[i];
+  double *allshear = fix_history->firstvalue[i];
 
   for (int jj = 0; jj < jnum; jj++) {
     neighprev++;
@@ -766,7 +748,7 @@ double PairGranHookeHistory::single(int i, int j, int itype, int jtype,
 /* ---------------------------------------------------------------------- */
 
 int PairGranHookeHistory::pack_forward_comm(int n, int *list, double *buf,
-                                            int pbc_flag, int *pbc)
+                                            int /*pbc_flag*/, int * /*pbc*/)
 {
   int i,j,m;
 

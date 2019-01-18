@@ -11,8 +11,8 @@
  See the README file in the top-level LAMMPS directory.
  ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "pair_sph_idealgas.h"
 #include "atom.h"
 #include "force.h"
@@ -197,10 +197,10 @@ void PairSPHIdealGas::allocate() {
  global settings
  ------------------------------------------------------------------------- */
 
-void PairSPHIdealGas::settings(int narg, char **arg) {
+void PairSPHIdealGas::settings(int narg, char **/*arg*/) {
   if (narg != 0)
     error->all(FLERR,
-        "Illegal number of setting arguments for pair_style sph/idealgas");
+        "Illegal number of arguments for pair_style sph/idealgas");
 }
 
 /* ----------------------------------------------------------------------
@@ -214,8 +214,8 @@ void PairSPHIdealGas::coeff(int narg, char **arg) {
     allocate();
 
   int ilo, ihi, jlo, jhi;
-  force->bounds(arg[0], atom->ntypes, ilo, ihi);
-  force->bounds(arg[1], atom->ntypes, jlo, jhi);
+  force->bounds(FLERR,arg[0], atom->ntypes, ilo, ihi);
+  force->bounds(FLERR,arg[1], atom->ntypes, jlo, jhi);
 
   double viscosity_one = force->numeric(FLERR,arg[2]);
   double cut_one = force->numeric(FLERR,arg[3]);
@@ -252,8 +252,8 @@ double PairSPHIdealGas::init_one(int i, int j) {
 
 /* ---------------------------------------------------------------------- */
 
-double PairSPHIdealGas::single(int i, int j, int itype, int jtype,
-    double rsq, double factor_coul, double factor_lj, double &fforce) {
+double PairSPHIdealGas::single(int /*i*/, int /*j*/, int /*itype*/, int /*jtype*/,
+    double /*rsq*/, double /*factor_coul*/, double /*factor_lj*/, double &fforce) {
   fforce = 0.0;
 
   return 0.0;

@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "fix_spring_chunk.h"
 #include "atom.h"
 #include "update.h"
@@ -34,7 +34,8 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixSpringChunk::FixSpringChunk(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  idchunk(NULL), idcom(NULL), com0(NULL), fcom(NULL)
 {
   if (narg != 6) error->all(FLERR,"Illegal fix spring/chunk command");
 
@@ -55,7 +56,6 @@ FixSpringChunk::FixSpringChunk(LAMMPS *lmp, int narg, char **arg) :
   strcpy(idcom,arg[5]);
 
   esprings = 0.0;
-  com0 = fcom = NULL;
   nchunk = 0;
 }
 
@@ -144,7 +144,7 @@ void FixSpringChunk::min_setup(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixSpringChunk::post_force(int vflag)
+void FixSpringChunk::post_force(int /*vflag*/)
 {
   int i,m;
   double dx,dy,dz,r;
@@ -231,7 +231,7 @@ void FixSpringChunk::post_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixSpringChunk::post_force_respa(int vflag, int ilevel, int iloop)
+void FixSpringChunk::post_force_respa(int vflag, int ilevel, int /*iloop*/)
 {
   if (ilevel == ilevel_respa) post_force(vflag);
 }

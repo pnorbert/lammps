@@ -25,7 +25,8 @@ There is an example script for this package in examples/USER/srp.
 Please contact Timothy Sirk for questions (tim.sirk@us.army.mil).
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
+#include <cstdlib>
+#include <cstring>
 #include "pair_srp.h"
 #include "atom.h"
 #include "comm.h"
@@ -40,7 +41,6 @@ Please contact Timothy Sirk for questions (tim.sirk@us.army.mil).
 #include "fix_srp.h"
 #include "thermo.h"
 #include "output.h"
-#include <string.h>
 #include "citeme.h"
 
 using namespace LAMMPS_NS;
@@ -68,6 +68,7 @@ static int srp_instance = 0;
 PairSRP::PairSRP(LAMMPS *lmp) : Pair(lmp)
 {
   writedata = 1;
+  single_enable = 0;
 
   if (lmp->citeme) lmp->citeme->add(cite_srp);
 
@@ -196,7 +197,7 @@ void PairSRP::compute(int eflag, int vflag)
         j = jlist[jj];
 
         // enforce 1-2 exclusions
-        if( (sbmask(j) & exclude) )
+        if ((sbmask(j) & exclude))
           continue;
 
         j &= NEIGHMASK;
@@ -257,8 +258,7 @@ void PairSRP::compute(int eflag, int vflag)
         }
       }
    }
- }
-  else{
+ } else {
   // using min distance option
 
     for (ii = 0; ii < inum; ii++) {
@@ -274,7 +274,7 @@ void PairSRP::compute(int eflag, int vflag)
         j = jlist[jj];
 
         // enforce 1-2 exclusions
-        if( (sbmask(j) & exclude) )
+        if ((sbmask(j) & exclude))
           continue;
 
         j &= NEIGHMASK;
@@ -290,7 +290,7 @@ void PairSRP::compute(int eflag, int vflag)
         dij = sqrt(dijsq);
 
         if (dij < SMALL)
- 	  continue;     // dij can be 0.0 with soft potentials
+      continue;     // dij can be 0.0 with soft potentials
 
         wd = 1.0 - dij / cut[bptype][bptype];
         fpair = a0[bptype][bptype] * wd / dij;
@@ -360,9 +360,9 @@ void PairSRP::settings(int narg, char **arg)
 
   cut_global = force->numeric(FLERR,arg[0]);
   // wildcard
-  if (strcmp(arg[1],"*") == 0)
+  if (strcmp(arg[1],"*") == 0) {
     btype = 0;
-  else {
+  } else {
     btype = force->inumeric(FLERR,arg[1]);
     if ((btype > atom->nbondtypes) || (btype <= 0))
       error->all(FLERR,"Illegal pair_style command");
@@ -408,7 +408,7 @@ void PairSRP::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= bptype; i++)
-      for (j = i+1; j <= bptype; j++)
+      for (j = i; j <= bptype; j++)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 }
@@ -425,8 +425,8 @@ void PairSRP::coeff(int narg, char **arg)
 
     // set ij bond-bond cutoffs
     int ilo, ihi, jlo, jhi;
-    force->bounds(arg[0], bptype, ilo, ihi);
-    force->bounds(arg[1], bptype, jlo, jhi);
+    force->bounds(FLERR,arg[0], bptype, ilo, ihi);
+    force->bounds(FLERR,arg[1], bptype, jlo, jhi);
 
     double a0_one = force->numeric(FLERR,arg[2]);
     double cut_one = cut_global;

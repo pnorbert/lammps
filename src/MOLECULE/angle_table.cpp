@@ -15,9 +15,9 @@
    Contributing author: Chuanfu Luo (luochuanfu@gmail.com)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "angle_table.h"
 #include "atom.h"
 #include "neighbor.h"
@@ -215,7 +215,7 @@ void AngleTable::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->nangletypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->nangletypes,ilo,ihi);
 
   int me;
   MPI_Comm_rank(world,&me);
@@ -369,7 +369,7 @@ void AngleTable::read_table(Table *tb, char *file, char *keyword)
   FILE *fp = force->open_potential(file);
   if (fp == NULL) {
     char str[128];
-    sprintf(str,"Cannot open file %s",file);
+    snprintf(str,128,"Cannot open file %s",file);
     error->one(FLERR,str);
   }
 
@@ -609,18 +609,22 @@ double AngleTable::splint(double *xa, double *ya, double *y2a, int n, double x)
 
 void AngleTable::uf_lookup(int type, double x, double &u, double &f)
 {
-  int itable;
-  double fraction,a,b;
+  if (!std::isfinite(x)) {
+    error->one(FLERR,"Illegal angle in angle style table");
+  }
 
-  Table *tb = &tables[tabindex[type]];
+  double fraction,a,b;
+  const Table *tb = &tables[tabindex[type]];
+  int itable = static_cast<int> (x * tb->invdelta);
+
+  if (itable < 0) itable = 0;
+  if (itable >= tablength) itable = tablength-1;
 
   if (tabstyle == LINEAR) {
-    itable = static_cast<int> ( x * tb->invdelta);
     fraction = (x - tb->ang[itable]) * tb->invdelta;
     u = tb->e[itable] + fraction*tb->de[itable];
     f = tb->f[itable] + fraction*tb->df[itable];
   } else if (tabstyle == SPLINE) {
-    itable = static_cast<int> ( x * tb->invdelta);
     fraction = (x - tb->ang[itable]) * tb->invdelta;
 
     b = (x - tb->ang[itable]) * tb->invdelta;
@@ -640,17 +644,21 @@ void AngleTable::uf_lookup(int type, double x, double &u, double &f)
 
 void AngleTable::u_lookup(int type, double x, double &u)
 {
-  int itable;
-  double fraction,a,b;
+  if (!std::isfinite(x)) {
+    error->one(FLERR,"Illegal angle in angle style table");
+  }
 
-  Table *tb = &tables[tabindex[type]];
+  double fraction,a,b;
+  const Table *tb = &tables[tabindex[type]];
+  int itable = static_cast<int> ( x * tb->invdelta);
+
+  if (itable < 0) itable = 0;
+  if (itable >= tablength) itable = tablength-1;
 
   if (tabstyle == LINEAR) {
-    itable = static_cast<int> ( x * tb->invdelta);
     fraction = (x - tb->ang[itable]) * tb->invdelta;
     u = tb->e[itable] + fraction*tb->de[itable];
   } else if (tabstyle == SPLINE) {
-    itable = static_cast<int> ( x * tb->invdelta);
     fraction = (x - tb->ang[itable]) * tb->invdelta;
 
     b = (x - tb->ang[itable]) * tb->invdelta;

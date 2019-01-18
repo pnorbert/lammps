@@ -16,10 +16,10 @@
    Contributing author: Aidan Thompson (SNL)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_lj_cubic.h"
 #include "atom.h"
 #include "comm.h"
@@ -175,18 +175,12 @@ void PairLJCubic::allocate()
    global settings
 ------------------------------------------------------------------------- */
 
-void PairLJCubic::settings(int narg, char **arg)
+void PairLJCubic::settings(int narg, char **/*arg*/)
 {
   if (narg != 0) error->all(FLERR,"Illegal pair_style command");
 
-  // reset cutoffs that have been explicitly set
-
-  if (allocated) {
-    int i,j;
-    for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
-        if (setflag[i][j]) cut[i][j] = 0.0;
-  }
+  // NOTE: lj/cubic has no global cutoff. instead the cutoff is
+  // inferred from the lj parameters. so we must not reset cutoffs here.
 }
 
 /* ----------------------------------------------------------------------
@@ -200,8 +194,8 @@ void PairLJCubic::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double epsilon_one = force->numeric(FLERR,arg[2]);
   double sigma_one = force->numeric(FLERR,arg[3]);
@@ -327,9 +321,9 @@ void PairLJCubic::read_restart_settings(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double PairLJCubic::single(int i, int j, int itype, int jtype,
+double PairLJCubic::single(int /*i*/, int /*j*/, int itype, int jtype,
                              double rsq,
-                             double factor_coul, double factor_lj,
+                             double /*factor_coul*/, double factor_lj,
                              double &fforce)
 {
   double r2inv,r6inv,forcelj,philj;

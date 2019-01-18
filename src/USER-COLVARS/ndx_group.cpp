@@ -1,3 +1,5 @@
+// -*- c++ -*-
+
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
    http://lammps.sandia.gov, Sandia National Laboratories
@@ -22,9 +24,9 @@
 #include "force.h"
 #include "error.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 using namespace LAMMPS_NS;
 #define BUFLEN 4096
@@ -34,7 +36,7 @@ static char *find_section(FILE *fp, const char *name)
 {
   char linebuf[BUFLEN];
   char *n,*p,*t,*r;
-  
+
   while ((p = fgets(linebuf,BUFLEN,fp))) {
     t = strtok(p," \t\n\r\f");
     if ((t != NULL) && *t == '[') {

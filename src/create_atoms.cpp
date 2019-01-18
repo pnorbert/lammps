@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "create_atoms.h"
 #include "atom.h"
 #include "atom_vec.h"
@@ -44,7 +44,6 @@ using namespace MathConst;
 
 enum{BOX,REGION,SINGLE,RANDOM};
 enum{ATOM,MOLECULE};
-enum{LAYOUT_UNIFORM,LAYOUT_NONUNIFORM,LAYOUT_TILED};    // several files
 
 /* ---------------------------------------------------------------------- */
 
@@ -314,7 +313,7 @@ void CreateAtoms::command(int narg, char **arg)
   }
 
   if (style == BOX || style == REGION) {
-    if (comm->layout != LAYOUT_TILED) {
+    if (comm->layout != Comm::LAYOUT_TILED) {
       if (domain->xperiodic) {
         if (comm->myloc[0] == 0) sublo[0] -= epsilon[0];
         if (comm->myloc[0] == comm->procgrid[0]-1) subhi[0] -= 2.0*epsilon[0];
@@ -343,6 +342,11 @@ void CreateAtoms::command(int narg, char **arg)
     }
   }
 
+  // Record wall time for atom creation
+
+  MPI_Barrier(world);
+  double time1 = MPI_Wtime();
+
   // clear ghost count and any ghost bonus data internal to AtomVec
   // same logic as beginning of Comm::exchange()
   // do it now b/c creating atoms will overwrite ghost atoms
@@ -359,30 +363,9 @@ void CreateAtoms::command(int narg, char **arg)
   else if (style == RANDOM) add_random();
   else add_lattice();
 
-  // invoke set_arrays() for fixes/computes/variables
-  //   that need initialization of attributes of new atoms
-  // don't use modify->create_attributes() since would be inefficient
-  //   for large number of atoms
-  // note that for typical early use of create_atoms,
-  //   no fixes/computes/variables exist yet
+  // init per-atom fix/compute/variable values for created atoms
 
-  int nlocal = atom->nlocal;
-  for (int m = 0; m < modify->nfix; m++) {
-    Fix *fix = modify->fix[m];
-    if (fix->create_attribute)
-      for (int i = nlocal_previous; i < nlocal; i++)
-        fix->set_arrays(i);
-  }
-
-  for (int m = 0; m < modify->ncompute; m++) {
-    Compute *compute = modify->compute[m];
-    if (compute->create_attribute)
-      for (int i = nlocal_previous; i < nlocal; i++)
-        compute->set_arrays(i);
-  }
-
-  for (int i = nlocal_previous; i < nlocal; i++)
-    input->variable->set_arrays(i);
+  atom->data_fix_compute_variable(nlocal_previous,atom->nlocal);
 
   // set new total # of atoms and error check
 
@@ -530,6 +513,9 @@ void CreateAtoms::command(int narg, char **arg)
     if (domain->triclinic) domain->lamda2x(atom->nlocal);
   }
 
+  MPI_Barrier(world);
+  double time2 = MPI_Wtime();
+
   // clean up
 
   delete ranmol;
@@ -542,12 +528,16 @@ void CreateAtoms::command(int narg, char **arg)
   // print status
 
   if (comm->me == 0) {
-    if (screen)
+    if (screen) {
       fprintf(screen,"Created " BIGINT_FORMAT " atoms\n",
               atom->natoms-natoms_previous);
-    if (logfile)
+      fprintf(screen,"  Time spent = %g secs\n",time2-time1);
+    }
+    if (logfile) {
       fprintf(logfile,"Created " BIGINT_FORMAT " atoms\n",
               atom->natoms-natoms_previous);
+      fprintf(logfile,"  Time spent = %g secs\n",time2-time1);
+    }
   }
 
   // for MOLECULE mode:
@@ -579,10 +569,20 @@ void CreateAtoms::add_single()
   }
 
   // if triclinic, convert to lamda coords (0-1)
+  // with remapflag set and periodic dims,
+  //   resulting coord must satisfy 0.0 <= coord < 1.0
 
   double lamda[3],*coord;
   if (triclinic) {
     domain->x2lamda(xone,lamda);
+    if (remapflag) {
+      if (domain->xperiodic && (lamda[0] < 0.0 || lamda[0] >= 1.0))
+        lamda[0] = 0.0;
+      if (domain->yperiodic && (lamda[1] < 0.0 || lamda[1] >= 1.0))
+        lamda[1] = 0.0;
+      if (domain->zperiodic && (lamda[2] < 0.0 || lamda[2] >= 1.0))
+        lamda[2] = 0.0;
+    }
     coord = lamda;
   } else coord = xone;
 
@@ -827,7 +827,7 @@ void CreateAtoms::add_molecule(double *center, double *quat_user)
   onemol->quat_external = quat;
 
   // create atoms in molecule with atom ID = 0 and mol ID = 0
-  // reset in caller after all moleclues created by all procs
+  // reset in caller after all molecules created by all procs
   // pass add_molecule_atom an offset of 0 since don't know
   //   max tag of atoms in previous molecules at this point
 

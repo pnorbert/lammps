@@ -16,10 +16,10 @@
                          Chandra Veer Singh (Cornell)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_adp.h"
 #include "atom.h"
 #include "force.h"
@@ -424,7 +424,7 @@ void PairADP::allocate()
    global settings
 ------------------------------------------------------------------------- */
 
-void PairADP::settings(int narg, char **arg)
+void PairADP::settings(int narg, char **/*arg*/)
 {
   if (narg > 0) error->all(FLERR,"Illegal pair_style command");
 }
@@ -493,7 +493,7 @@ void PairADP::coeff(int narg, char **arg)
     for (j = i; j <= n; j++) {
       if (map[i] >= 0 && map[j] >= 0) {
         setflag[i][j] = 1;
-        if (i == j) atom->set_mass(i,setfl->mass[map[i]]);
+        if (i == j) atom->set_mass(FLERR,i,setfl->mass[map[i]]);
         count++;
       }
     }
@@ -521,7 +521,7 @@ void PairADP::init_style()
    init for one type pair i,j and corresponding j,i
 ------------------------------------------------------------------------- */
 
-double PairADP::init_one(int i, int j)
+double PairADP::init_one(int /*i*/, int /*j*/)
 {
   // single global cutoff = max of cut from all files read in
   // for funcfl could be multiple files
@@ -551,7 +551,7 @@ void PairADP::read_file(char *filename)
     fp = force->open_potential(filename);
     if (fp == NULL) {
       char str[128];
-      sprintf(str,"Cannot open ADP potential file %s",filename);
+      snprintf(str,128,"Cannot open ADP potential file %s",filename);
       error->one(FLERR,str);
     }
   }
@@ -935,7 +935,7 @@ void PairADP::grab(FILE *fp, int n, double *list)
 /* ---------------------------------------------------------------------- */
 
 int PairADP::pack_forward_comm(int n, int *list, double *buf,
-                               int pbc_flag, int *pbc)
+                               int /*pbc_flag*/, int * /*pbc*/)
 {
   int i,j,m;
 

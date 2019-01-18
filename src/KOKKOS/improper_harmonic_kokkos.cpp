@@ -16,8 +16,8 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "improper_harmonic_kokkos.h"
 #include "atom_kokkos.h"
 #include "comm.h"
@@ -26,7 +26,7 @@
 #include "force.h"
 #include "update.h"
 #include "math_const.h"
-#include "memory.h"
+#include "memory_kokkos.h"
 #include "error.h"
 #include "atom_masks.h"
 
@@ -58,8 +58,8 @@ template<class DeviceType>
 ImproperHarmonicKokkos<DeviceType>::~ImproperHarmonicKokkos()
 {
   if (!copymode) {
-    memory->destroy_kokkos(k_eatom,eatom);
-    memory->destroy_kokkos(k_vatom,vatom);
+    memoryKK->destroy_kokkos(k_eatom,eatom);
+    memoryKK->destroy_kokkos(k_vatom,vatom);
   }
 }
 
@@ -71,24 +71,24 @@ void ImproperHarmonicKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
   eflag = eflag_in;
   vflag = vflag_in;
 
-  if (eflag || vflag) ev_setup(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag,0);
   else evflag = 0;
 
   // reallocate per-atom arrays if necessary
 
   if (eflag_atom) {
-    if(k_eatom.dimension_0()<maxeatom) {
-      memory->destroy_kokkos(k_eatom,eatom);
-      memory->create_kokkos(k_eatom,eatom,maxeatom,"improper:eatom");
-      d_eatom = k_eatom.d_view;
-    }
+    //if(k_eatom.extent(0)<maxeatom) { // won't work without adding zero functor
+      memoryKK->destroy_kokkos(k_eatom,eatom);
+      memoryKK->create_kokkos(k_eatom,eatom,maxeatom,"improper:eatom");
+      d_eatom = k_eatom.template view<DeviceType>();
+    //}
   }
   if (vflag_atom) {
-    if(k_vatom.dimension_0()<maxvatom) {
-      memory->destroy_kokkos(k_vatom,vatom);
-      memory->create_kokkos(k_vatom,vatom,maxvatom,6,"improper:vatom");
-      d_vatom = k_vatom.d_view;
-    }
+    //if(k_vatom.extent(0)<maxvatom) { // won't work without adding zero functor
+      memoryKK->destroy_kokkos(k_vatom,vatom);
+      memoryKK->create_kokkos(k_vatom,vatom,maxvatom,6,"improper:vatom");
+      d_vatom = k_vatom.template view<DeviceType>();
+    //}
   }
 
   //atomKK->sync(execution_space,datamask_read);
@@ -128,7 +128,6 @@ void ImproperHarmonicKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
       Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagImproperHarmonicCompute<0,0> >(0,nimproperlist),*this);
     }
   }
-  //DeviceType::fence();
 
   // error check
 
@@ -310,8 +309,8 @@ void ImproperHarmonicKokkos<DeviceType>::allocate()
   k_k = Kokkos::DualView<F_FLOAT*,DeviceType>("ImproperHarmonic::k",n+1);
   k_chi = Kokkos::DualView<F_FLOAT*,DeviceType>("ImproperHarmonic::chi",n+1);
 
-  d_k = k_k.d_view;
-  d_chi = k_chi.d_view;
+  d_k = k_k.template view<DeviceType>();
+  d_chi = k_chi.template view<DeviceType>();
 }
 
 /* ----------------------------------------------------------------------
@@ -322,6 +321,25 @@ template<class DeviceType>
 void ImproperHarmonicKokkos<DeviceType>::coeff(int narg, char **arg)
 {
   ImproperHarmonic::coeff(narg, arg);
+
+  int n = atom->nimpropertypes;
+  for (int i = 1; i <= n; i++) {
+    k_k.h_view[i] = k[i];
+    k_chi.h_view[i] = chi[i];
+  }
+
+  k_k.template modify<LMPHostType>();
+  k_chi.template modify<LMPHostType>();
+}
+
+/* ----------------------------------------------------------------------
+   proc 0 reads coeffs from restart file, bcasts them
+------------------------------------------------------------------------- */
+
+template<class DeviceType>
+void ImproperHarmonicKokkos<DeviceType>::read_restart(FILE *fp)
+{
+  ImproperHarmonic::read_restart(fp);
 
   int n = atom->nimpropertypes;
   for (int i = 1; i <= n; i++) {

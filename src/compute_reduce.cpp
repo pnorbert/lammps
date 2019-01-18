@@ -11,8 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
-#include <stdlib.h>
+#include <mpi.h>
+#include <cstring>
+#include <cstdlib>
 #include "compute_reduce.h"
 #include "atom.h"
 #include "update.h"
@@ -29,8 +30,8 @@
 
 using namespace LAMMPS_NS;
 
-enum{SUM,SUMSQ,MINN,MAXX,AVE,AVESQ};             // also in ReduceRegion
-enum{X,V,F,COMPUTE,FIX,VARIABLE};
+enum{SUM,SUMSQ,MINN,MAXX,AVE,AVESQ};             // also in ComputeReduceRegion
+enum{UNKNOWN=-1,X,V,F,COMPUTE,FIX,VARIABLE};
 enum{PERATOM,LOCAL};
 
 #define INVOKED_VECTOR 2
@@ -43,7 +44,10 @@ enum{PERATOM,LOCAL};
 /* ---------------------------------------------------------------------- */
 
 ComputeReduce::ComputeReduce(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg),
+  nvalues(0), which(NULL), argindex(NULL), flavor(NULL),
+  value2index(NULL), ids(NULL), onevec(NULL), replace(NULL), indices(NULL),
+  owner(NULL), idregion(NULL), varatom(NULL)
 {
   int iarg = 0;
   if (strcmp(style,"reduce") == 0) {
@@ -75,11 +79,10 @@ ComputeReduce::ComputeReduce(LAMMPS *lmp, int narg, char **arg) :
   // expand args if any have wildcard character "*"
 
   int expand = 0;
-  char **earg,**arghold;
+  char **earg;
   int nargnew = input->expand_args(narg-iarg,&arg[iarg],1,earg);
 
   if (earg != &arg[iarg]) expand = 1;
-  arghold = arg;
   arg = earg;
 
   // parse values until one isn't recognized
@@ -89,6 +92,10 @@ ComputeReduce::ComputeReduce(LAMMPS *lmp, int narg, char **arg) :
   flavor = new int[nargnew];
   ids = new char*[nargnew];
   value2index = new int[nargnew];
+  for (int i=0; i < nargnew; ++i) {
+    which[i] = argindex[i] = flavor[i] = value2index[i] = UNKNOWN;
+    ids[i] = NULL;
+  }
   nvalues = 0;
 
   iarg = 0;
@@ -190,9 +197,8 @@ ComputeReduce::ComputeReduce(LAMMPS *lmp, int narg, char **arg) :
   // if wildcard expansion occurred, free earg memory from expand_args()
 
   if (expand) {
-    for (int i = 0; i < nvalues; i++) delete [] earg[i];
+    for (int i = 0; i < nargnew; i++) delete [] earg[i];
     memory->sfree(earg);
-    arg = arghold;
   }
 
   // setup and error check
@@ -343,7 +349,7 @@ void ComputeReduce::init()
         error->all(FLERR,"Variable name for compute reduce does not exist");
       value2index[m] = ivariable;
 
-    } else value2index[m] = -1;
+    } else value2index[m] = UNKNOWN;
   }
 
   // set index and check validity of region
@@ -466,8 +472,16 @@ double ComputeReduce::compute_one(int m, int flag)
 
   index = -1;
   int vidx = value2index[m];
-  int aidx = argindex[m];
 
+  // initialization in case it has not yet been run, e.g. when
+  // the compute was invoked right after it has been created
+
+  if (vidx == UNKNOWN) {
+    init();
+    vidx = value2index[m];
+  }
+
+  int aidx = argindex[m];
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
 

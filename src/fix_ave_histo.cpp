@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include <unistd.h>
 #include "fix_ave_histo.h"
 #include "atom.h"
@@ -45,7 +45,9 @@ enum{IGNORE,END,EXTRA};
 /* ---------------------------------------------------------------------- */
 
 FixAveHisto::FixAveHisto(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  nvalues(0), which(NULL), argindex(NULL), value2index(NULL), ids(NULL), fp(NULL), stats_list(NULL),
+  bin(NULL), bin_total(NULL), bin_all(NULL), bin_list(NULL), coord(NULL), vector(NULL)
 {
   if (narg < 10) error->all(FLERR,"Illegal fix ave/histo command");
 
@@ -100,67 +102,58 @@ FixAveHisto::FixAveHisto(LAMMPS *lmp, int narg, char **arg) :
   // this can reset nvalues
 
   int expand = 0;
-  char **earg,**arghold;
+  char **earg;
   nvalues = input->expand_args(nvalues,&arg[9],mode,earg);
 
   if (earg != &arg[9]) expand = 1;
-  arghold = arg;
   arg = earg;
 
   // parse values
 
-  which = argindex = value2index = NULL;
-  ids = NULL;
-  allocate_values(nvalues);
+  which = new int[nvalues];
+  argindex = new int[nvalues];
+  value2index = new int[nvalues];
+  ids = new char*[nvalues];
 
   for (int i = 0; i < nvalues; i++) {
     if (strcmp(arg[i],"x") == 0) {
       which[i] = X;
       argindex[i] = 0;
       ids[i] = NULL;
-      iarg++;
     } else if (strcmp(arg[i],"y") == 0) {
       which[i] = X;
       argindex[i] = 1;
       ids[i] = NULL;
-      iarg++;
     } else if (strcmp(arg[i],"z") == 0) {
       which[i] = X;
       argindex[i] = 2;
       ids[i] = NULL;
-      iarg++;
 
     } else if (strcmp(arg[i],"vx") == 0) {
       which[i] = V;
       argindex[i] = 0;
       ids[i] = NULL;
-      iarg++;
     } else if (strcmp(arg[i],"vy") == 0) {
       which[i] = V;
       argindex[i] = 1;
       ids[i] = NULL;
-      iarg++;
     } else if (strcmp(arg[i],"vz") == 0) {
       which[i] = V;
       argindex[i] = 2;
       ids[i] = NULL;
-      iarg++;
 
     } else if (strcmp(arg[i],"fx") == 0) {
       which[i] = F;
       argindex[i] = 0;
       ids[i] = NULL;
-      iarg++;
     } else if (strcmp(arg[i],"fy") == 0) {
       which[i] = F;
       argindex[i] = 1;
       ids[i] = NULL;
-      iarg++;
     } else if (strcmp(arg[i],"fz") == 0) {
       which[i] = F;
       argindex[i] = 2;
       ids[i] = NULL;
-      iarg++;
 
     } else if ((strncmp(arg[i],"c_",2) == 0) ||
         (strncmp(arg[i],"f_",2) == 0) ||
@@ -193,7 +186,6 @@ FixAveHisto::FixAveHisto(LAMMPS *lmp, int narg, char **arg) :
   if (expand) {
     for (int i = 0; i < nvalues; i++) delete [] earg[i];
     memory->sfree(earg);
-    arg = arghold;
   }
 
   // setup and error check
@@ -213,14 +205,18 @@ FixAveHisto::FixAveHisto(LAMMPS *lmp, int narg, char **arg) :
   for (int i = 0; i < nvalues; i++) {
     if (which[i] == X || which[i] == V || which[i] == F) kindflag = PERATOM;
     else if (which[i] == COMPUTE) {
-      Compute *compute = modify->compute[modify->find_compute(ids[0])];
+      int c_id = modify->find_compute(ids[i]);
+      if (c_id < 0) error->all(FLERR,"Fix ave/histo input is invalid compute");
+      Compute *compute = modify->compute[c_id];
       if (compute->scalar_flag || compute->vector_flag || compute->array_flag)
         kindflag = GLOBAL;
       else if (compute->peratom_flag) kindflag = PERATOM;
       else if (compute->local_flag) kindflag = LOCAL;
       else error->all(FLERR,"Fix ave/histo input is invalid compute");
     } else if (which[i] == FIX) {
-      Fix *fix = modify->fix[modify->find_fix(ids[0])];
+      int f_id = modify->find_fix(ids[i]);
+      if (f_id < 0) error->all(FLERR,"Fix ave/histo input is invalid fix");
+      Fix *fix = modify->fix[f_id];
       if (fix->scalar_flag || fix->vector_flag || fix->array_flag)
         kindflag = GLOBAL;
       else if (fix->peratom_flag) kindflag = PERATOM;
@@ -228,6 +224,7 @@ FixAveHisto::FixAveHisto(LAMMPS *lmp, int narg, char **arg) :
       else error->all(FLERR,"Fix ave/histo input is invalid fix");
     } else if (which[i] == VARIABLE) {
       int ivariable = input->variable->find(ids[i]);
+      if (ivariable < 0) error->all(FLERR,"Fix ave/histo input is invalid variable");
       if (input->variable->equalstyle(ivariable)) kindflag = GLOBAL;
       else if (input->variable->atomstyle(ivariable)) kindflag = PERATOM;
       else error->all(FLERR,"Fix ave/histo input is invalid variable");
@@ -399,7 +396,7 @@ FixAveHisto::FixAveHisto(LAMMPS *lmp, int narg, char **arg) :
         error->all(FLERR,"Variable name for fix ave/histo does not exist");
       if (argindex[i] == 0 && input->variable->vectorstyle(ivariable) == 0)
         error->all(FLERR,"Fix ave/histo variable is not vector-style variable");
-      if (argindex[i]) 
+      if (argindex[i])
         error->all(FLERR,"Fix ave/histo variable cannot be indexed");
 
     } else if (which[i] == VARIABLE && kind == PERATOM) {
@@ -408,7 +405,7 @@ FixAveHisto::FixAveHisto(LAMMPS *lmp, int narg, char **arg) :
         error->all(FLERR,"Variable name for fix ave/histo does not exist");
       if (argindex[i] == 0 && input->variable->atomstyle(ivariable) == 0)
         error->all(FLERR,"Fix ave/histo variable is not atom-style variable");
-      if (argindex[i]) 
+      if (argindex[i])
         error->all(FLERR,"Fix ave/histo variable cannot be indexed");
     }
   }
@@ -496,11 +493,11 @@ FixAveHisto::FixAveHisto(LAMMPS *lmp, int narg, char **arg) :
 
 FixAveHisto::~FixAveHisto()
 {
-  memory->destroy(which);
-  memory->destroy(argindex);
-  memory->destroy(value2index);
+  delete [] which;
+  delete [] argindex;
+  delete [] value2index;
   for (int i = 0; i < nvalues; i++) delete [] ids[i];
-  memory->sfree(ids);
+  delete [] ids;
 
   if (fp && me == 0) fclose(fp);
 
@@ -562,7 +559,7 @@ void FixAveHisto::init()
    only does something if nvalid = current timestep
 ------------------------------------------------------------------------- */
 
-void FixAveHisto::setup(int vflag)
+void FixAveHisto::setup(int /*vflag*/)
 {
   end_of_step();
 }
@@ -940,7 +937,7 @@ void FixAveHisto::options(int iarg, int narg, char **arg)
         fp = fopen(arg[iarg+1],"w");
         if (fp == NULL) {
           char str[128];
-          sprintf(str,"Cannot open fix ave/histo file %s",arg[iarg+1]);
+          snprintf(str,128,"Cannot open fix ave/histo file %s",arg[iarg+1]);
           error->one(FLERR,str);
         }
       }
@@ -1001,18 +998,6 @@ void FixAveHisto::options(int iarg, int narg, char **arg)
       iarg += 2;
     } else error->all(FLERR,"Illegal fix ave/histo command");
   }
-}
-
-/* ----------------------------------------------------------------------
-   reallocate vectors for each input value, of length N
-------------------------------------------------------------------------- */
-
-void FixAveHisto::allocate_values(int n)
-{
-  memory->grow(which,n,"ave/hsito:which");
-  memory->grow(argindex,n,"ave/histo:argindex");
-  memory->grow(value2index,n,"ave/histo:value2index");
-  ids = (char **) memory->srealloc(ids,n*sizeof(char *),"ave/histo:ids");
 }
 
 /* ----------------------------------------------------------------------

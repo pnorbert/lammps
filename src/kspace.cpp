@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "kspace.h"
 #include "atom.h"
 #include "comm.h"
@@ -30,8 +30,9 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-KSpace::KSpace(LAMMPS *lmp, int narg, char **arg) : Pointers(lmp)
+KSpace::KSpace(LAMMPS *lmp) : Pointers(lmp)
 {
+  order_allocated = 0;
   energy = 0.0;
   virial[0] = virial[1] = virial[2] = virial[3] = virial[4] = virial[5] = 0.0;
 
@@ -88,12 +89,10 @@ KSpace::KSpace(LAMMPS *lmp, int narg, char **arg) : Pointers(lmp)
   eatom = NULL;
   vatom = NULL;
 
-  datamask = ALL_MASK;
-  datamask_ext = ALL_MASK;
-
   execution_space = Host;
   datamask_read = ALL_MASK;
   datamask_modify = ALL_MASK;
+  copymode = 0;
 
   memory->create(gcons,7,7,"kspace:gcons");
   gcons[2][0] = 15.0 / 8.0;
@@ -149,6 +148,8 @@ KSpace::KSpace(LAMMPS *lmp, int narg, char **arg) : Pointers(lmp)
 
 KSpace::~KSpace()
 {
+  if (copymode) return;
+
   memory->destroy(eatom);
   memory->destroy(vatom);
   memory->destroy(gcons);
@@ -205,7 +206,7 @@ void KSpace::pair_check()
    see integrate::ev_set() for values of eflag (0-3) and vflag (0-6)
 ------------------------------------------------------------------------- */
 
-void KSpace::ev_setup(int eflag, int vflag)
+void KSpace::ev_setup(int eflag, int vflag, int alloc)
 {
   int i,n;
 
@@ -226,25 +227,29 @@ void KSpace::ev_setup(int eflag, int vflag)
 
   if (eflag_atom && atom->nmax > maxeatom) {
     maxeatom = atom->nmax;
-    memory->destroy(eatom);
-    memory->create(eatom,maxeatom,"kspace:eatom");
+    if (alloc) {
+      memory->destroy(eatom);
+      memory->create(eatom,maxeatom,"kspace:eatom");
+    }
   }
   if (vflag_atom && atom->nmax > maxvatom) {
     maxvatom = atom->nmax;
-    memory->destroy(vatom);
-    memory->create(vatom,maxvatom,6,"kspace:vatom");
+    if (alloc) {
+      memory->destroy(vatom);
+      memory->create(vatom,maxvatom,6,"kspace:vatom");
+    }
   }
 
   // zero accumulators
 
   if (eflag_global) energy = 0.0;
   if (vflag_global) for (i = 0; i < 6; i++) virial[i] = 0.0;
-  if (eflag_atom) {
+  if (eflag_atom && alloc) {
     n = atom->nlocal;
     if (tip4pflag) n += atom->nghost;
     for (i = 0; i < n; i++) eatom[i] = 0.0;
   }
-  if (vflag_atom) {
+  if (vflag_atom && alloc) {
     n = atom->nlocal;
     if (tip4pflag) n += atom->nghost;
     for (i = 0; i < n; i++) {
@@ -310,10 +315,10 @@ double KSpace::estimate_table_accuracy(double q2_over_sqrt, double spr)
   if (comm->me == 0) {
     char str[128];
     if (nctb)
-      sprintf(str,"Using %d-bit tables for long-range coulomb",nctb);
+      sprintf(str,"  using %d-bit tables for long-range coulomb",nctb);
     else
-      sprintf(str,"Using polynomial approximation for long-range coulomb");
-    error->warning(FLERR,str);
+      sprintf(str,"  using polynomial approximation for long-range coulomb");
+    error->message(FLERR,str);
   }
 
   if (nctb) {
@@ -536,11 +541,11 @@ void KSpace::modify_params(int narg, char **arg)
       ky_ewald = atoi(arg[iarg+2]);
       kz_ewald = atoi(arg[iarg+3]);
       if (kx_ewald < 0 || ky_ewald < 0 || kz_ewald < 0)
-	error->all(FLERR,"Bad kspace_modify kmax/ewald parameter");
+        error->all(FLERR,"Bad kspace_modify kmax/ewald parameter");
       if (kx_ewald > 0 && ky_ewald > 0 && kz_ewald > 0)
-	kewaldflag = 1;
+        kewaldflag = 1;
       else
-	kewaldflag = 0;
+        kewaldflag = 0;
       iarg += 4;
     } else if (strcmp(arg[iarg],"mix/disp") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal kspace_modify command");
@@ -575,7 +580,11 @@ void KSpace::modify_params(int narg, char **arg)
       else if (strcmp(arg[iarg+1],"no") == 0) auto_disp_flag = 0;
       else error->all(FLERR,"Illegal kspace_modify command");
       iarg += 2;
-    } else error->all(FLERR,"Illegal kspace_modify command");
+    } else {
+      int n = modify_param(narg-iarg,&arg[iarg]);
+      if (n == 0) error->all(FLERR,"Illegal kspace_modify command");
+      iarg += n;
+    }
   }
 }
 

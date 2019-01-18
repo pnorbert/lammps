@@ -15,10 +15,10 @@
    Contributing author: Ilya Valuev (JIHT, Moscow, Russia)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_awpmd_cut.h"
 #include "atom.h"
 #include "update.h"
@@ -274,13 +274,12 @@ void PairAWPMDCut::compute(int eflag, int vflag)
     int i = ilist[ii];
     if(gmap[i]<0) // this particle was filtered out
       continue;
-    if(spin[i]==0){  // this is an ion, copying forces
+    if (spin[i]==0) {  // this is an ion, copying forces
       int ion=gmap[i];
       f[i][0]=fi[ion][0];
       f[i][0]=fi[ion][1];
       f[i][0]=fi[ion][2];
-    }
-    else { // electron
+    } else { // electron
       int iel=gmap[i];
       int s=spin[i] >0 ? 0 : 1;
       wpmd->get_wp_force(s,iel,(Vector_3 *)f[i],(Vector_3 *)(atom->vforce+3*i),atom->erforce+i,atom->ervelforce+i,(Vector_2 *)(atom->csforce+2*i));
@@ -304,12 +303,11 @@ void PairAWPMDCut::compute(int eflag, int vflag)
     if (eflag_atom) {
       // transfer per-atom energies here
       for (int i = 0; i < ntot; i++) {
-        if(gmap[i]<0) // this particle was filtered out
+        if (gmap[i]<0) // this particle was filtered out
           continue;
-        if(spin[i]==0){
+        if (spin[i]==0) {
           eatom[i]=wpmd->Eiep[gmap[i]]+wpmd->Eiip[gmap[i]];
-        }
-        else {
+        } else {
           int s=spin[i] >0 ? 0 : 1;
           eatom[i]=wpmd->Eep[s][gmap[i]]+wpmd->Eeip[s][gmap[i]]+wpmd->Eeep[s][gmap[i]]+wpmd->Ewp[s][gmap[i]];
         }
@@ -454,16 +452,6 @@ void PairAWPMDCut::settings(int narg, char **arg){
     else if(!strcmp(arg[i],"flex_press"))
       flexible_pressure_flag = 1;
   }
-
-
-  // reset cutoffs that have been explicitly set
-  /*
-  if (allocated) {
-    int i,j;
-    for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
-        if (setflag[i][j]) cut[i][j] = cut_global;
-  }*/
 }
 
 /* ----------------------------------------------------------------------
@@ -484,18 +472,18 @@ void PairAWPMDCut::coeff(int narg, char **arg)
   if(cut_global<0)
     cut_global=half_box_length;
 
-  if (!allocated)
+  if (!allocated) {
     allocate();
-  else{
+  } else {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
+      for (j = i; j <= atom->ntypes; j++)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double cut_one = cut_global;
   if (narg == 3) cut_one = force->numeric(FLERR,arg[2]);

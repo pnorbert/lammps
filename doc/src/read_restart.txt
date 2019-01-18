@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -23,8 +23,6 @@ read_restart restart.*
 read_restart restart.*.mpiio
 read_restart poly.*.% remap :pre
 
-:pre
-
 [Description:]
 
 Read in a previously saved system configuration from a restart file.
@@ -33,7 +31,7 @@ information is stored (and not stored) in a restart file is given
 below.  Basically this operation will re-create the simulation box
 with all its atoms and their attributes as well as some related global
 settings, at the point in time it was written to the restart file by a
-previous simluation.  The simulation box will be partitioned into a
+previous simulation.  The simulation box will be partitioned into a
 regular 3d grid of rectangular bricks, one per processor, based on the
 number of processors in the current simulation and the settings of the
 "processors"_processors.html command.  The partitioning can later be
@@ -78,13 +76,11 @@ different than if the run had continued.  These pair styles include
 
 If a restarted run is immediately different than the run which
 produced the restart file, it could be a LAMMPS bug, so consider
-"reporting it"_Section_errors.html#err_2 if you think the behavior is
-wrong.
+"reporting it"_Errors_bugs.html if you think the behavior is a bug.
 
 Because restart files are binary, they may not be portable to other
 machines.  In this case, you can use the "-restart command-line
-switch"_Section_start.html#start_7 to convert a restart file to a data
-file.
+switch"_Run_options.html to convert a restart file to a data file.
 
 Similar to how restart files are written (see the
 "write_restart"_write_restart.html and "restart"_restart.html
@@ -126,7 +122,7 @@ MPI-IO requires two steps.  First, build LAMMPS with its MPIIO package
 installed, e.g.
 
 make yes-mpiio    # installs the MPIIO package
-make g++          # build LAMMPS for your platform :pre
+make mpi          # build LAMMPS for your platform :pre
 
 Second, use a restart filename which contains ".mpiio".  Note that it
 does not have to end in ".mpiio", just contain those characters.
@@ -143,11 +139,11 @@ these settings after the restart file is read.
 "units"_units.html
 "newton bond"_newton.html (see discussion of newton command below)
 "atom style"_atom_style.html and "atom_modify"_atom_modify.html settings id, map, sort
-"comm style"_comm_style.html and "comm_modify"_comm_modify settings mode, cutoff, vel
+"comm style"_comm_style.html and "comm_modify"_comm_modify.html settings mode, cutoff, vel
 "timestep"_timestep.html
 simulation box size and shape and "boundary"_boundary.html settings
 atom "group"_group.html definitions
-per-type atom settings such as "mass"_mass.thml
+per-type atom settings such as "mass"_mass.html
 per-atom attributes including their group assignments and molecular topology attributes (bonds, angles, etc)
 force field styles ("pair"_pair_style.html, "bond"_bond_style.html, "angle"_angle_style.html, etc)
 force field coefficients ("pair"_pair_coeff.html, "bond"_bond_coeff.html, "angle"_angle_coeff.html, etc) in some cases (see below)
@@ -180,7 +176,7 @@ not the same and the current value is not the default.
 Note that some force field styles (pair, bond, angle, etc) do not
 store their coefficient info in restart files.  Typically these are
 many-body or tabulated potentials which read their parameters from
-separate files.  In these cases you will need to re-specify the "pair
+separate files.  In these cases you will need to re-specify the
 "pair_coeff"_pair_coeff.html, "bond_coeff"_bond_coeff.html, etc
 commands in your restart input script.  The doc pages for individual
 force field styles mention if this is the case.  This is also true of
@@ -193,13 +189,19 @@ input script should specify all fixes it will use.  However, note that
 some fixes store an internal "state" which is written to the restart
 file.  This allows the fix to continue on with its calculations in a
 restarted simulation.  To re-enable such a fix, the fix command in the
-new input script must use the same fix-ID and group-ID as was used in
-the input script that wrote the restart file.  If a match is found,
-LAMMPS prints a message indicating that the fix is being re-enabled.
-If no match is found before the first run or minimization is performed
-by the new script, the "state" information for the saved fix is
-discarded.  See the doc pages for individual fixes for info on which
-ones can be restarted in this manner.
+new input script must be of the same style and use the same fix-ID as
+was used in the input script that wrote the restart file.
+
+If a match is found, LAMMPS prints a message indicating that the fix
+is being re-enabled.  If no match is found before the first run or
+minimization is performed by the new script, the "state" information
+for the saved fix is discarded.  At the time the discard occurs,
+LAMMPS will also print a list of fixes for which the information is
+being discarded.  See the doc pages for individual fixes for info on
+which ones can be restarted in this manner.  Note that fixes which are
+created internally by other LAMMPS commands (computes, fixes, etc)
+will have style names which are all-capitalized, and IDs which are
+generated internally.
 
 Likewise, the "computes"_fix.html used for a simulation are not stored
 in the restart file.  This means the new input script should specify
@@ -214,6 +216,18 @@ then it will create the same fix in the restarted run.  This means the
 re-created fix will be re-enabled with the stored state information as
 described in the previous paragraph, so that the compute can continue
 its calculations in a consistent manner.
+
+NOTE: There are a handful of commands which can be used before or
+between runs which may require a system initialization.  Examples
+include the "balance", "displace_atoms", "delete_atoms", "set" (some
+options), and "velocity" (some options) commands.  This is because
+they can migrate atoms to new processors.  Thus they will also discard
+unused "state" information from fixes.  You will know the discard has
+occurred because a list of discarded fixes will be printed to the
+screen and log file, as explained above.  This means that if you wish
+to retain that info in a restarted run, you must re-specify the
+relevant fixes and computes (which create fixes) before those commands
+are used.
 
 Some pair styles, like the "granular pair styles"_pair_gran.html, also
 use a fix to store "state" information that persists from timestep to

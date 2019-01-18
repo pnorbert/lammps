@@ -15,10 +15,10 @@
    Contributing author: Ray Shan (SNL)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_lj_charmm_coul_charmm_implicit_kokkos.h"
 #include "kokkos.h"
 #include "atom_kokkos.h"
@@ -31,7 +31,7 @@
 #include "integrate.h"
 #include "respa.h"
 #include "math_const.h"
-#include "memory.h"
+#include "memory_kokkos.h"
 #include "error.h"
 #include "atom_masks.h"
 
@@ -73,8 +73,8 @@ template<class DeviceType>
 PairLJCharmmCoulCharmmImplicitKokkos<DeviceType>::~PairLJCharmmCoulCharmmImplicitKokkos()
 {
   if (!copymode) {
-    memory->destroy_kokkos(k_eatom,eatom);
-    memory->destroy_kokkos(k_vatom,vatom);
+    memoryKK->destroy_kokkos(k_eatom,eatom);
+    memoryKK->destroy_kokkos(k_vatom,vatom);
     k_cutsq = DAT::tdual_ffloat_2d();
     k_cut_ljsq = DAT::tdual_ffloat_2d();
     k_cut_coulsq = DAT::tdual_ffloat_2d();
@@ -110,10 +110,23 @@ void PairLJCharmmCoulCharmmImplicitKokkos<DeviceType>::compute(int eflag_in, int
   eflag = eflag_in;
   vflag = vflag_in;
 
-  if (neighflag == FULL || neighflag == FULLCLUSTER) no_virial_fdotr_compute = 1;
+  if (neighflag == FULL) no_virial_fdotr_compute = 1;
 
-  if (eflag || vflag) ev_setup(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag,0);
   else evflag = vflag_fdotr = 0;
+
+  // reallocate per-atom arrays if necessary
+
+  if (eflag_atom) {
+    memoryKK->destroy_kokkos(k_eatom,eatom);
+    memoryKK->create_kokkos(k_eatom,eatom,maxeatom,"pair:eatom");
+    d_eatom = k_eatom.view<DeviceType>();
+  }
+  if (vflag_atom) {
+    memoryKK->destroy_kokkos(k_vatom,vatom);
+    memoryKK->create_kokkos(k_vatom,vatom,maxvatom,6,"pair:vatom");
+    d_vatom = k_vatom.view<DeviceType>();
+  }
 
   atomKK->sync(execution_space,datamask_read);
   k_cutsq.template sync<DeviceType>();
@@ -167,6 +180,16 @@ void PairLJCharmmCoulCharmmImplicitKokkos<DeviceType>::compute(int eflag_in, int
     virial[5] += ev.v[5];
   }
 
+  if (eflag_atom) {
+    k_eatom.template modify<DeviceType>();
+    k_eatom.template sync<LMPHostType>();
+  }
+
+  if (vflag_atom) {
+    k_vatom.template modify<DeviceType>();
+    k_vatom.template sync<LMPHostType>();
+  }
+
   if (vflag_fdotr) pair_virial_fdotr_compute(this);
 
   copymode = 0;
@@ -194,8 +217,8 @@ compute_fpair(const F_FLOAT& rsq, const int& i, const int&j,
               (cut_ljsq + 2.0*rsq - 3.0*cut_lj_innersq) / denom_lj;
     switch2 = 12.0*rsq * (cut_ljsq-rsq) * (rsq-cut_lj_innersq) / denom_lj;
     englj = r6inv *
-	    ((STACKPARAMS?m_params[itype][jtype].lj3:params(itype,jtype).lj3)*r6inv -
-	     (STACKPARAMS?m_params[itype][jtype].lj4:params(itype,jtype).lj4));
+            ((STACKPARAMS?m_params[itype][jtype].lj3:params(itype,jtype).lj3)*r6inv -
+             (STACKPARAMS?m_params[itype][jtype].lj4:params(itype,jtype).lj4));
     forcelj = forcelj*switch1 + englj*switch2;
   }
 
@@ -292,18 +315,18 @@ void PairLJCharmmCoulCharmmImplicitKokkos<DeviceType>::allocate()
   int n = atom->ntypes;
 
   memory->destroy(cutsq);
-  memory->create_kokkos(k_cutsq,cutsq,n+1,n+1,"pair:cutsq");
+  memoryKK->create_kokkos(k_cutsq,cutsq,n+1,n+1,"pair:cutsq");
   d_cutsq = k_cutsq.template view<DeviceType>();
 
   //memory->destroy(cut_ljsq);
-  memory->create_kokkos(k_cut_ljsq,n+1,n+1,"pair:cut_ljsq");
+  memoryKK->create_kokkos(k_cut_ljsq,n+1,n+1,"pair:cut_ljsq");
   d_cut_ljsq = k_cut_ljsq.template view<DeviceType>();
 
-  memory->create_kokkos(k_cut_coulsq,n+1,n+1,"pair:cut_coulsq");
+  memoryKK->create_kokkos(k_cut_coulsq,n+1,n+1,"pair:cut_coulsq");
   d_cut_coulsq = k_cut_coulsq.template view<DeviceType>();
 
   k_params = Kokkos::DualView<params_lj_coul**,Kokkos::LayoutRight,DeviceType>("PairLJCharmmCoulCharmmImplicit::params",n+1,n+1);
-  params = k_params.d_view;
+  params = k_params.template view<DeviceType>();
 }
 
 template<class DeviceType>
@@ -455,11 +478,9 @@ void PairLJCharmmCoulCharmmImplicitKokkos<DeviceType>::init_style()
   if (neighflag == FULL) {
     neighbor->requests[irequest]->full = 1;
     neighbor->requests[irequest]->half = 0;
-    neighbor->requests[irequest]->full_cluster = 0;
   } else if (neighflag == HALF || neighflag == HALFTHREAD) {
     neighbor->requests[irequest]->full = 0;
     neighbor->requests[irequest]->half = 1;
-    neighbor->requests[irequest]->full_cluster = 0;
   } else {
     error->all(FLERR,"Cannot use chosen neighbor list style with lj/charmm/coul/charmm/implicit/kk");
   }
@@ -492,14 +513,11 @@ double PairLJCharmmCoulCharmmImplicitKokkos<DeviceType>::init_one(int i, int j)
     m_cut_coulsq[j][i] = m_cut_coulsq[i][j] = cut_coulsqm;
   }
 
-  k_cutsq.h_view(i,j) = cutone*cutone;
-  k_cutsq.h_view(j,i) = k_cutsq.h_view(i,j);
+  k_cutsq.h_view(i,j) = k_cutsq.h_view(j,i) = cutone*cutone;
   k_cutsq.template modify<LMPHostType>();
-  k_cut_ljsq.h_view(i,j) = cut_ljsqm;
-  k_cut_ljsq.h_view(j,i) = k_cut_ljsq.h_view(i,j);
+  k_cut_ljsq.h_view(i,j) = k_cut_ljsq.h_view(j,i) = cut_ljsqm;
   k_cut_ljsq.template modify<LMPHostType>();
-  k_cut_coulsq.h_view(i,j) = cut_coulsqm;
-  k_cut_coulsq.h_view(j,i) = k_cut_coulsq.h_view(i,j);
+  k_cut_coulsq.h_view(i,j) = k_cut_coulsq.h_view(j,i) = cut_coulsqm;
   k_cut_coulsq.template modify<LMPHostType>();
   k_params.template modify<LMPHostType>();
 

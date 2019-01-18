@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "fix_wall_srd.h"
 #include "atom.h"
 #include "modify.h"
@@ -36,7 +36,7 @@ enum{NONE,EDGE,CONSTANT,VARIABLE};
 /* ---------------------------------------------------------------------- */
 
 FixWallSRD::FixWallSRD(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg), nwall(0), fwall(NULL), fwall_all(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal fix wall/srd command");
 

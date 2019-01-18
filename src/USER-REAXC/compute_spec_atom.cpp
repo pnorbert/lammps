@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <string.h>
+#include <cmath>
+#include <cstring>
 #include "compute_spec_atom.h"
 #include "math_extra.h"
 #include "atom.h"
@@ -24,7 +24,7 @@
 
 #include "reaxc_defs.h"
 #include "reaxc_types.h"
-#include "pair_reax_c.h"
+#include "pair_reaxc.h"
 
 using namespace LAMMPS_NS;
 
@@ -43,7 +43,7 @@ ComputeSpecAtom::ComputeSpecAtom(LAMMPS *lmp, int narg, char **arg) :
   else size_peratom_cols = nvalues;
 
   // Initiate reaxc
-  reaxc = (PairReaxC *) force->pair_match("reax/c",1);
+  reaxc = (PairReaxC *) force->pair_match("reax/c",0);
 
   pack_choice = new FnPtrPack[nvalues];
 
@@ -69,7 +69,7 @@ ComputeSpecAtom::ComputeSpecAtom(LAMMPS *lmp, int narg, char **arg) :
     } else if (strcmp(arg[iarg],"vz") == 0) {
       pack_choice[i] = &ComputeSpecAtom::pack_vz;
 
-    // from pair_reax_c
+    // from pair_reaxc
     } else if (strcmp(arg[iarg],"abo01") == 0) {
       pack_choice[i] = &ComputeSpecAtom::pack_abo01;
     } else if (strcmp(arg[iarg],"abo02") == 0) {

@@ -35,7 +35,7 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact  H. Carter Edwards (hcedwar@sandia.gov)
+// Questions? Contact Christian R. Trott (crtrott@sandia.gov)
 //
 // ************************************************************************
 //@HEADER
@@ -116,7 +116,7 @@ int main(int argc, char * argv[]) {
   Kokkos::parallel_for(Kokkos::RangePolicy<Kokkos::Cuda>(0,size),FillDevice(0.0,d_a));
   Kokkos::parallel_for(Kokkos::RangePolicy<Kokkos::Cuda>(0,size),FillDevice(1.3513,d_b));
   Kokkos::fence();
-  Kokkos::Impl::Timer timer;
+  Kokkos::Timer timer;
   Kokkos::parallel_for(Kokkos::RangePolicy<Kokkos::Cuda>(0,size),ComputeADevice(20,d_a,d_b));
 
   if(synch==1)

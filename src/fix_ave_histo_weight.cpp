@@ -15,8 +15,8 @@
    Contributing author: Shawn Coleman (ARL)
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include <unistd.h>
 #include "fix_ave_histo_weight.h"
 #include "atom.h"
@@ -126,7 +126,7 @@ void FixAveHistoWeight::end_of_step()
 
   modify->clearstep_compute();
 
-  // calcualte weight factors which are 2nd value (i = 1)
+  // calculate weight factors which are 2nd value (i = 1)
 
   double weight = 0.0;
   double *weights = NULL;

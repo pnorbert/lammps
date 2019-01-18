@@ -2,7 +2,7 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
@@ -11,13 +11,13 @@ fix lb/viscous command :h3
 [Syntax:]
 
 fix ID group-ID lb/viscous :pre
-  
+
 ID, group-ID are documented in "fix"_fix.html command
 lb/viscous = style name of this fix command :ul
 
 [Examples:]
 
-fix 1 flow lb/viscous 
+fix 1 flow lb/viscous
 
 [Description:]
 
@@ -44,7 +44,7 @@ hydrodynamic forces to the particles.
 :line
 
 For further details, as well as descriptions and results of several
-test runs, see "Mackay et al."_#Mackay.  Please include a citation to
+test runs, see "Mackay et al."_#Mackay3.  Please include a citation to
 this paper if this fix is used in work contributing to published
 research.
 
@@ -57,9 +57,9 @@ As described in the "fix viscous"_fix_viscous.html documentation:
 "No information about this fix is written to "binary restart
 files"_restart.html.  None of the "fix_modify"_fix_modify.html options
 are relevant to this fix.  No global or per-atom quantities are stored
-by this fix for access by various "output
-commands"_Section_howto.html#howto_15.  No parameter of this fix can
-be used with the {start/stop} keywords of the "run"_run.html command.
+by this fix for access by various "output commands"_Howto_output.html.
+No parameter of this fix can be used with the {start/stop} keywords of
+the "run"_run.html command.
 
 The forces due to this fix are imposed during an energy minimization,
 invoked by the "minimize"_minimize.html command.  This fix should only
@@ -70,8 +70,8 @@ for details."
 [Restrictions:]
 
 This fix is part of the USER-LB package.  It is only enabled if LAMMPS
-was built with that package.  See the "Making
-LAMMPS"_Section_start.html#start_3 section for more info.
+was built with that package.  See the "Build
+package"_Build_package.html doc page for more info.
 
 Can only be used if a lattice-Boltzmann fluid has been created via the
 "fix lb/fluid"_fix_lb_fluid.html command, and must come after this
@@ -90,5 +90,5 @@ lb/rigid/pc/sphere"_fix_lb_rigid_pc_sphere.html
 
 :line
 
-:link(Mackay) 
+:link(Mackay3)
 [(Mackay et al.)] Mackay, F. E., Ollila, S.T.T., and Denniston, C., Hydrodynamic Forces Implemented into LAMMPS through a lattice-Boltzmann fluid, Computer Physics Communications 184 (2013) 2021-2031.

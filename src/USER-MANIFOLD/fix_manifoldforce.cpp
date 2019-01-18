@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "math.h"
-#include "string.h"
-#include "stdlib.h"
+#include <cmath>
+#include <cstring>
+#include <cstdlib>
 #include "atom.h"
 #include "update.h"
 #include "respa.h"
@@ -31,12 +31,12 @@ using namespace user_manifold;
 
 
 // Helper functions for parameters/equal style variables in input script
-inline bool was_var( const char *arg )
+static bool was_var( const char *arg )
 {
   return strstr( arg, "v_" ) == arg;
 }
 
-inline bool str_eq( const char *str1, const char *str2 )
+static bool str_eq( const char *str1, const char *str2 )
 {
   return strcmp(str1,str2) == 0;
 }
@@ -50,24 +50,17 @@ FixManifoldForce::FixManifoldForce(LAMMPS *lmp, int narg, char **arg) :
   MPI_Comm_rank(world,&me);
 
 
-  // Check the min-style:
-  int good_minner = str_eq(update->minimize_style,"hftn") |
-                    str_eq(update->minimize_style,"quickmin");
-  if( !good_minner){
-    error->warning(FLERR,"Minimizing with fix manifoldforce without hftn or quickmin is fishy");
-  }
-
 
   // Command is given as
   // fix <name> <group> manifoldforce manifold_name manifold_args
-  if( narg < 5 ){
+  if (narg < 5) {
     error->all(FLERR,"Illegal fix manifoldforce! No manifold given");
   }
   const char *m_name = arg[3];
   ptr_m = create_manifold(m_name,lmp,narg,arg);
 
   // Construct manifold from factory:
-  if( !ptr_m ){
+  if (!ptr_m) {
     char msg[2048];
     snprintf(msg,2048,"Manifold pointer for manifold '%s' was NULL for some reason", arg[3]);
     error->all(FLERR,msg);
@@ -77,15 +70,15 @@ FixManifoldForce::FixManifoldForce(LAMMPS *lmp, int narg, char **arg) :
   // After constructing the manifold, you can safely make
   // room for the parameters
   nvars = ptr_m->nparams();
-  if( narg < nvars+4 ){
+  if (narg < nvars+4) {
     char msg[2048];
     sprintf(msg,"Manifold %s needs at least %d argument(s)!",
             m_name, nvars);
     error->all(FLERR,msg);
   }
 
-  *(ptr_m->get_params()) = new double[nvars];
-  if( ptr_m->get_params() == NULL ){
+  ptr_m->params = new double[nvars];
+  if (ptr_m->params == NULL) {
     error->all(FLERR,"Parameter pointer was NULL!");
   }
 
@@ -94,9 +87,9 @@ FixManifoldForce::FixManifoldForce(LAMMPS *lmp, int narg, char **arg) :
   // and sets the values of those arguments that were _not_
   // equal style vars (so that they are not overwritten each time step).
 
-  double *params = *(ptr_m->get_params());
+  double *params = ptr_m->params;
   for( int i = 0; i < nvars; ++i ){
-    if( was_var( arg[i+4] ) )
+    if (was_var( arg[i+4] ))
       error->all(FLERR,"Equal-style variables not allowed with fix manifoldforce");
 
     // Use force->numeric to trigger an error if arg is not a number.
@@ -104,7 +97,7 @@ FixManifoldForce::FixManifoldForce(LAMMPS *lmp, int narg, char **arg) :
   }
 
 
-  // Perform any further initialisation for the manifold that depends on params:
+  // Perform any further initialization for the manifold that depends on params:
   ptr_m->post_param_init();
 }
 
@@ -117,6 +110,18 @@ int FixManifoldForce::setmask()
   mask |= POST_FORCE_RESPA;
   mask |= MIN_POST_FORCE;
   return mask;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixManifoldForce::init()
+{
+  // Check the min-style:
+  const bool is_good_min_style = str_eq(update->minimize_style,"hftn")
+                                || str_eq(update->minimize_style,"quickmin");
+  if (!is_good_min_style) {
+    error->all(FLERR,"Fix manifoldforce requires min_style hftn or quickmin");
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -144,7 +149,7 @@ void FixManifoldForce::min_setup(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixManifoldForce::post_force(int vflag)
+void FixManifoldForce::post_force(int /*vflag*/)
 {
   double **x = atom->x;
   double **f = atom->f;
@@ -172,7 +177,7 @@ void FixManifoldForce::post_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixManifoldForce::post_force_respa(int vflag, int ilevel, int iloop)
+void FixManifoldForce::post_force_respa(int vflag, int /*ilevel*/, int /*iloop*/)
 {
   post_force(vflag);
 }

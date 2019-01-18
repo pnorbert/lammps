@@ -1,4 +1,4 @@
-/* ----------------------------------------------------------------------
+/* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
    http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
@@ -26,7 +26,7 @@ PairStyle(bop,PairBOP)
 #define LMP_PAIR_BOP_H
 
 #include "pair.h"
-#include <time.h>
+#include <ctime>
 #include "update.h"
 
 namespace LAMMPS_NS {
@@ -274,7 +274,7 @@ atomic structure to ensure that it is realistic.
 E: Too many atom triplets for pair bop
 
 The number of three atom groups for angle determinations exceeds the
-expected number.  Check your atomic structrure to ensure that it is
+expected number.  Check your atomic structure to ensure that it is
 realistic.
 
 E: Cannot open BOP potential file %s
@@ -285,5 +285,9 @@ path and name are correct.
 E: Incorrect table format check for element types
 
 Self-explanatory.
+
+E: Unsupported BOP potential file format
+
+UNDOCUMENTED
 
 */

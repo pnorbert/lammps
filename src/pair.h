@@ -15,7 +15,6 @@
 #define LMP_PAIR_H
 
 #include "pointers.h"
-#include "accelerator_kokkos.h"
 
 namespace LAMMPS_NS {
 
@@ -92,17 +91,12 @@ class Pair : protected Pointers {
   class NeighList *list;         // standard neighbor list used by most pairs
   class NeighList *listhalf;     // half list used by some pairs
   class NeighList *listfull;     // full list used by some pairs
-  class NeighList *listgranhistory;  // granular history list used by some pairs
-  class NeighList *listinner;    // rRESPA lists used by some pairs
-  class NeighList *listmiddle;
-  class NeighList *listouter;
-
-  unsigned int datamask;
-  unsigned int datamask_ext;
 
   int allocated;                 // 0/1 = whether arrays are allocated
                                  //       public so external driver can check
   int compute_flag;              // 0 if skip compute()
+
+  enum{GEOMETRIC,ARITHMETIC,SIXTHPOWER};   // mixing options
 
   // KOKKOS host/device flag and data masks
 
@@ -146,7 +140,7 @@ class Pair : protected Pointers {
 
   virtual double single(int, int, int, int,
                         double, double, double,
-			double& fforce) {
+                        double& fforce) {
     fforce = 0.0;
     return 0.0;
   }
@@ -163,8 +157,8 @@ class Pair : protected Pointers {
   virtual void free_tables();
   virtual void free_disp_tables();
 
-  virtual void write_restart(FILE *) {}
-  virtual void read_restart(FILE *) {}
+  virtual void write_restart(FILE *);
+  virtual void read_restart(FILE *);
   virtual void write_restart_settings(FILE *) {}
   virtual void read_restart_settings(FILE *) {}
   virtual void write_data(FILE *) {}
@@ -172,10 +166,6 @@ class Pair : protected Pointers {
 
   virtual int pack_forward_comm(int, int *, double *, int, int *) {return 0;}
   virtual void unpack_forward_comm(int, int, double *) {}
-  virtual int pack_forward_comm_kokkos(int, DAT::tdual_int_2d, 
-                                       int, DAT::tdual_xfloat_1d &, 
-                                       int, int *) {return 0;};
-  virtual void unpack_forward_comm_kokkos(int, int, DAT::tdual_xfloat_1d &) {}
   virtual int pack_reverse_comm(int, int, double *) {return 0;}
   virtual void unpack_reverse_comm(int, int *, double *) {}
   virtual double memory_usage();
@@ -191,22 +181,17 @@ class Pair : protected Pointers {
   virtual void min_xf_get(int) {}
   virtual void min_x_set(int) {}
 
-  virtual unsigned int data_mask() {return datamask;}
-  virtual unsigned int data_mask_ext() {return datamask_ext;}
-
   // management of callbacks to be run from ev_tally()
 
  protected:
   int num_tally_compute;
   class Compute **list_tally_compute;
  public:
-  void add_tally_callback(class Compute *);
-  void del_tally_callback(class Compute *);
+  virtual void add_tally_callback(class Compute *);
+  virtual void del_tally_callback(class Compute *);
 
  protected:
   int instance_me;        // which Pair class instantiation I am
-
-  enum{GEOMETRIC,ARITHMETIC,SIXTHPOWER};   // mixing options
 
   int special_lj[4];           // copied from force->special_lj for Kokkos
 
@@ -217,17 +202,23 @@ class Pair : protected Pointers {
   double tabinner;                     // inner cutoff for Coulomb table
   double tabinner_disp;                 // inner cutoff for dispersion table
 
+ public:
   // custom data type for accessing Coulomb tables
 
   typedef union {int i; float f;} union_int_float_t;
 
+  // Accessor for the user-intel package to determine virial calc for hybrid
+
+  inline int fdotr_is_set() const { return vflag_fdotr; }
+
+ protected:
   int vflag_fdotr;
   int maxeatom,maxvatom;
 
   int copymode;   // if set, do not deallocate during destruction
                   // required when classes are used as functors by Kokkos
 
-  virtual void ev_setup(int, int);
+  virtual void ev_setup(int, int, int alloc = 1);
   void ev_unset();
   void ev_tally_full(int, double, double, double, double, double, double);
   void ev_tally_xyz_full(int, double, double,
@@ -251,7 +242,7 @@ class Pair : protected Pointers {
     ubuf(int arg) : i(arg) {}
   };
 
-  inline int sbmask(int j) {
+  inline int sbmask(int j) const {
     return j >> SBBITS & 3;
   }
 };
@@ -281,7 +272,7 @@ E: Cannot use pair tail corrections with 2d simulations
 
 The correction factors are only currently defined for 3d systems.
 
-W: Using pair tail corrections with nonperiodic system
+W: Using pair tail corrections with non-periodic system
 
 This is probably a bogus thing to do, since tail corrections are
 computed by integrating the density of a periodic system out to
@@ -313,6 +304,12 @@ New coding for the pair style would need to be done.
 E: Pair style requires a KSpace style
 
 No kspace style is defined.
+
+E: BUG: restartinfo=1 but no restart support in pair style
+
+The pair style has a bug, where it does not support reading
+and writing information to a restart file, but does not set
+the member variable restartinfo to 0 as required in that case.
 
 E: Cannot yet use compute tally with Kokkos
 

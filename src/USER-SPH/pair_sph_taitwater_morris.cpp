@@ -11,8 +11,8 @@
  See the README file in the top-level LAMMPS directory.
  ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstdlib>
 #include "pair_sph_taitwater_morris.h"
 #include "atom.h"
 #include "force.h"
@@ -30,6 +30,7 @@ PairSPHTaitwaterMorris::PairSPHTaitwaterMorris(LAMMPS *lmp) : Pair(lmp)
 {
   restartinfo = 0;
   first = 1;
+  single_enable = 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -225,10 +226,10 @@ void PairSPHTaitwaterMorris::allocate() {
  global settings
  ------------------------------------------------------------------------- */
 
-void PairSPHTaitwaterMorris::settings(int narg, char **arg) {
+void PairSPHTaitwaterMorris::settings(int narg, char **/*arg*/) {
   if (narg != 0)
     error->all(FLERR,
-        "Illegal number of setting arguments for pair_style sph/taitwater/morris");
+        "Illegal number of arguments for pair_style sph/taitwater/morris");
 }
 
 /* ----------------------------------------------------------------------
@@ -243,8 +244,8 @@ void PairSPHTaitwaterMorris::coeff(int narg, char **arg) {
     allocate();
 
   int ilo, ihi, jlo, jhi;
-  force->bounds(arg[0], atom->ntypes, ilo, ihi);
-  force->bounds(arg[1], atom->ntypes, jlo, jhi);
+  force->bounds(FLERR,arg[0], atom->ntypes, ilo, ihi);
+  force->bounds(FLERR,arg[1], atom->ntypes, jlo, jhi);
 
   double rho0_one = force->numeric(FLERR,arg[2]);
   double soundspeed_one = force->numeric(FLERR,arg[3]);
@@ -278,7 +279,7 @@ void PairSPHTaitwaterMorris::coeff(int narg, char **arg) {
 double PairSPHTaitwaterMorris::init_one(int i, int j) {
 
   if (setflag[i][j] == 0) {
-    error->all(FLERR,"Not all pair sph/taitwater/morris coeffs are not set");
+    error->all(FLERR,"All pair sph/taitwater/morris coeffs are not set");
   }
 
   cut[j][i] = cut[i][j];
@@ -287,11 +288,3 @@ double PairSPHTaitwaterMorris::init_one(int i, int j) {
   return cut[i][j];
 }
 
-/* ---------------------------------------------------------------------- */
-
-double PairSPHTaitwaterMorris::single(int i, int j, int itype, int jtype,
-    double rsq, double factor_coul, double factor_lj, double &fforce) {
-  fforce = 0.0;
-
-  return 0.0;
-}

@@ -31,8 +31,11 @@ import os
 # ones.
 extensions = [
     'sphinx.ext.mathjax',
-    'sphinxcontrib.images',
 ]
+# 2017-12-07: commented out, since this package is broken with Sphinx 16.x
+#             yet we can no longer use Sphinx 15.x, since that breaks with
+#             newer version of the multiprocessor module.
+#    'sphinxcontrib.images',
 
 images_config = {
   'default_image_width' : '25%',
@@ -245,7 +248,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('Manual', 'liggghts', 'LAMMPS Documentation',
+    ('Manual', 'lammps', 'LAMMPS Documentation',
      ['Steve Plimpton'], 1)
 ]
 
@@ -276,4 +279,34 @@ texinfo_documents = [
 # If true, do not generate a @detailmenu in the "Top" node's menu.
 #texinfo_no_detailmenu = False
 
+# -- Options for ePUB output ----------------------------------------------
 
+epub_title = 'LAMMPS Documentation - ' + get_lammps_version()
+
+epub_cover = ('lammps-logo.png', '')
+
+epub_description = """
+This is the Manual for the LAMMPS software package.
+
+LAMMPS stands for Large-scale Atomic/Molecular Massively Parallel
+Simulator and is a classical molecular dynamics simulation code
+designed to run efficiently on parallel computers.  It was developed
+at Sandia National Laboratories, a US Department of Energy facility,
+with funding from the DOE.  It is an open-source code, distributed
+freely under the terms of the GNU Public License (GPL).
+
+The primary author of the code is Steve Plimpton, who can be emailed
+at sjplimp@sandia.gov.  The LAMMPS WWW Site at lammps.sandia.gov has
+more information about the code and its uses.
+"""
+
+epub_author = 'The LAMMPS Developers'
+
+# configure spelling extension if present
+import importlib.util
+spelling_spec = importlib.util.find_spec("sphinxcontrib.spelling")
+if spelling_spec:
+    extensions.append('sphinxcontrib.spelling')
+
+    spelling_lang='en_US'
+    spelling_word_list_filename='false_positives.txt'

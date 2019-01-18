@@ -18,10 +18,10 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_lubricateU_poly.h"
 #include "atom.h"
 #include "atom_vec.h"
@@ -122,7 +122,7 @@ void PairLubricateUPoly::compute(int eflag, int vflag)
   }
 
   // Stage one of Midpoint method
-  // Solve for velocities based on intial positions
+  // Solve for velocities based on initial positions
 
   iterate(atom->x,1);
 
@@ -421,7 +421,7 @@ void PairLubricateUPoly::compute_Fh(double **x)
     pre[0] *= 6.0;
 
     // Find the contribution to stress from isotropic RS0
-    // Set psuedo force to obtain the required contribution
+    // Set pseudo force to obtain the required contribution
     // need to set delx  and fy only
 
     fx = 0.0; delx = radi;
@@ -438,6 +438,8 @@ void PairLubricateUPoly::compute_Fh(double **x)
 
     for (jj = 0; jj < jnum; jj++) {
       j = jlist[jj];
+      j &= NEIGHMASK;
+
       delx = xtmp - x[j][0];
       dely = ytmp - x[j][1];
       delz = ztmp - x[j][2];
@@ -709,6 +711,8 @@ void PairLubricateUPoly::compute_RU(double **x)
 
     for (jj = 0; jj < jnum; jj++) {
       j = jlist[jj];
+      j &= NEIGHMASK;
+
       delx = xtmp - x[j][0];
       dely = ytmp - x[j][1];
       delz = ztmp - x[j][2];
@@ -947,6 +951,8 @@ void PairLubricateUPoly::compute_RE(double **x)
     // No contribution from isotropic terms due to E
     for (jj = 0; jj < jnum; jj++) {
       j = jlist[jj];
+      j &= NEIGHMASK;
+
       delx = xtmp - x[j][0];
       dely = ytmp - x[j][1];
       delz = ztmp - x[j][2];
@@ -1098,7 +1104,7 @@ void PairLubricateUPoly::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
+      for (j = i; j <= atom->ntypes; j++)
         if (setflag[i][j]) {
           cut_inner[i][j] = cut_inner_global;
           cut[i][j] = cut_global;

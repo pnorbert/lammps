@@ -15,9 +15,9 @@
    Contributing authors: Tim Lau (MIT)
 ------------------------------------------------------------------------- */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_eam_fs.h"
 #include "atom.h"
 #include "comm.h"
@@ -99,9 +99,10 @@ void PairEAMFS::coeff(int narg, char **arg)
     for (j = i; j <= n; j++) {
       if (map[i] >= 0 && map[j] >= 0) {
         setflag[i][j] = 1;
-        if (i == j) atom->set_mass(i,fs->mass[map[i]]);
+        if (i == j) atom->set_mass(FLERR,i,fs->mass[map[i]]);
         count++;
       }
+      scale[i][j] = 1.0;
     }
   }
 
@@ -126,7 +127,7 @@ void PairEAMFS::read_file(char *filename)
     fptr = force->open_potential(filename);
     if (fptr == NULL) {
       char str[128];
-      sprintf(str,"Cannot open EAM potential file %s",filename);
+      snprintf(str,128,"Cannot open EAM potential file %s",filename);
       error->one(FLERR,str);
     }
   }
@@ -165,15 +166,19 @@ void PairEAMFS::read_file(char *filename)
 
   if (me == 0) {
     fgets(line,MAXLINE,fptr);
-    sscanf(line,"%d %lg %d %lg %lg",
+    nwords = sscanf(line,"%d %lg %d %lg %lg",
            &file->nrho,&file->drho,&file->nr,&file->dr,&file->cut);
   }
 
+  MPI_Bcast(&nwords,1,MPI_INT,0,world);
   MPI_Bcast(&file->nrho,1,MPI_INT,0,world);
   MPI_Bcast(&file->drho,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&file->nr,1,MPI_INT,0,world);
   MPI_Bcast(&file->dr,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&file->cut,1,MPI_DOUBLE,0,world);
+
+  if ((nwords != 5) || (file->nrho <= 0) || (file->nr <= 0) || (file->dr <= 0.0))
+    error->all(FLERR,"Invalid EAM potential file");
 
   file->mass = new double[file->nelements];
   memory->create(file->frho,file->nelements,file->nrho+1,

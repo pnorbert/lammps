@@ -19,10 +19,10 @@
 ------------------------------------------------------------------------- */
 
 #include <mpi.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
+#include <cstring>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
 #include "pppm.h"
 #include "atom.h"
 #include "comm.h"
@@ -64,14 +64,23 @@ enum{FORWARD_IK,FORWARD_AD,FORWARD_IK_PERATOM,FORWARD_AD_PERATOM};
 
 /* ---------------------------------------------------------------------- */
 
-PPPM::PPPM(LAMMPS *lmp, int narg, char **arg) : KSpace(lmp, narg, arg)
+PPPM::PPPM(LAMMPS *lmp) : KSpace(lmp),
+  factors(NULL), density_brick(NULL), vdx_brick(NULL), vdy_brick(NULL), vdz_brick(NULL),
+  u_brick(NULL), v0_brick(NULL), v1_brick(NULL), v2_brick(NULL), v3_brick(NULL),
+  v4_brick(NULL), v5_brick(NULL), greensfn(NULL), vg(NULL), fkx(NULL), fky(NULL),
+  fkz(NULL), density_fft(NULL), work1(NULL), work2(NULL), gf_b(NULL), rho1d(NULL),
+  rho_coeff(NULL), drho1d(NULL), drho_coeff(NULL), sf_precoeff1(NULL), sf_precoeff2(NULL),
+  sf_precoeff3(NULL), sf_precoeff4(NULL), sf_precoeff5(NULL), sf_precoeff6(NULL),
+  acons(NULL), density_A_brick(NULL), density_B_brick(NULL), density_A_fft(NULL),
+  density_B_fft(NULL), fft1(NULL), fft2(NULL), remap(NULL), cg(NULL), cg_peratom(NULL),
+  part2grid(NULL), boxlo(NULL)
 {
-  if (narg < 1) error->all(FLERR,"Illegal kspace_style pppm command");
+  peratom_allocate_flag = 0;
+  group_allocate_flag = 0;
 
   pppmflag = 1;
   group_group_enable = 1;
-
-  accuracy_relative = fabs(force->numeric(FLERR,arg[0]));
+  triclinic = domain->triclinic;
 
   nfactors = 3;
   factors = new int[nfactors];
@@ -81,6 +90,11 @@ PPPM::PPPM(LAMMPS *lmp, int narg, char **arg) : KSpace(lmp, narg, arg)
 
   MPI_Comm_rank(world,&me);
   MPI_Comm_size(world,&nprocs);
+
+  nfft_both = 0;
+  nxhi_in = nxlo_in = nxhi_out = nxlo_out = 0;
+  nyhi_in = nylo_in = nyhi_out = nylo_out = 0;
+  nzhi_in = nzlo_in = nzhi_out = nzlo_out = 0;
 
   density_brick = vdx_brick = vdy_brick = vdz_brick = NULL;
   density_fft = NULL;
@@ -107,9 +121,6 @@ PPPM::PPPM(LAMMPS *lmp, int narg, char **arg) : KSpace(lmp, narg, arg)
 
   nmax = 0;
   part2grid = NULL;
-
-  peratom_allocate_flag = 0;
-  group_allocate_flag = 0;
 
   // define acons coefficients for estimation of kspace errors
   // see JCP 109, pg 7698 for derivation of coefficients
@@ -146,12 +157,22 @@ PPPM::PPPM(LAMMPS *lmp, int narg, char **arg) : KSpace(lmp, narg, arg)
   acons[7][6] = 4887769399.0 / 37838389248.0;
 }
 
+/* ---------------------------------------------------------------------- */
+
+void PPPM::settings(int narg, char **arg)
+{
+  if (narg < 1) error->all(FLERR,"Illegal kspace_style pppm command");
+  accuracy_relative = fabs(force->numeric(FLERR,arg[0]));
+}
+
 /* ----------------------------------------------------------------------
    free all memory
 ------------------------------------------------------------------------- */
 
 PPPM::~PPPM()
 {
+  if (copymode) return;
+
   delete [] factors;
   deallocate();
   if (peratom_allocate_flag) deallocate_peratom();
@@ -174,6 +195,10 @@ void PPPM::init()
   // error check
 
   triclinic_check();
+
+  if (triclinic != domain->triclinic)
+    error->all(FLERR,"Must redefine kspace_style after changing to triclinic box");
+
   if (domain->triclinic && differentiation_flag == 1)
     error->all(FLERR,"Cannot (yet) use PPPM with triclinic box "
                "and kspace_modify diff ad");
@@ -189,7 +214,7 @@ void PPPM::init()
   if (!atom->q_flag) error->all(FLERR,"Kspace style requires atom attribute q");
 
   if (slabflag == 0 && domain->nonperiodic > 0)
-    error->all(FLERR,"Cannot use nonperiodic boundaries with PPPM");
+    error->all(FLERR,"Cannot use non-periodic boundaries with PPPM");
   if (slabflag) {
     if (domain->xperiodic != 1 || domain->yperiodic != 1 ||
         domain->boundary[2][0] != 1 || domain->boundary[2][1] != 1)
@@ -249,8 +274,6 @@ void PPPM::init()
     double theta = force->angle->equilibrium_angle(typeA);
     double blen = force->bond->equilibrium_distance(typeB);
     alpha = qdist / (cos(0.5*theta) * blen);
-    if (domain->triclinic)
-      error->all(FLERR,"Cannot (yet) use PPPM with triclinic box and TIP4P");
   }
 
   // compute qsum & qsqsum and warn if not charge-neutral
@@ -388,7 +411,7 @@ void PPPM::setup()
   // perform some checks to avoid illegal boundaries with read_data
 
   if (slabflag == 0 && domain->nonperiodic > 0)
-    error->all(FLERR,"Cannot use nonperiodic boundaries with PPPM");
+    error->all(FLERR,"Cannot use non-periodic boundaries with PPPM");
   if (slabflag) {
     if (domain->xperiodic != 1 || domain->yperiodic != 1 ||
         domain->boundary[2][0] != 1 || domain->boundary[2][1] != 1)
@@ -985,6 +1008,8 @@ void PPPM::set_grid_global()
   if (!gewaldflag) {
     if (accuracy <= 0.0)
       error->all(FLERR,"KSpace accuracy must be > 0");
+    if (q2 == 0.0)
+      error->all(FLERR,"Must use kspace_modify gewald for uncharged system");
     g_ewald = accuracy*sqrt(natoms*cutoff*xprd*yprd*zprd) / (2.0*q2);
     if (g_ewald >= 1.0) g_ewald = (1.35 - 0.15*log(accuracy))/cutoff;
     else g_ewald = sqrt(-log(g_ewald)) / cutoff;
@@ -1249,6 +1274,7 @@ double PPPM::compute_qopt()
 double PPPM::estimate_ik_error(double h, double prd, bigint natoms)
 {
   double sum = 0.0;
+  if (natoms == 0) return 0.0;
   for (int m = 0; m < order; m++)
     sum += acons[order][m] * pow(h*g_ewald,2.0*m);
   double value = q2 * pow(h*g_ewald,(double)order) *
@@ -1326,6 +1352,7 @@ double PPPM::final_accuracy()
   double yprd = domain->yprd;
   double zprd = domain->zprd;
   bigint natoms = atom->natoms;
+  if (natoms == 0) natoms = 1; // avoid division by zero
 
   double df_kspace = compute_df_kspace();
   double q2_over_sqrt = q2 / sqrt(natoms*cutoff*xprd*yprd*zprd);
@@ -1890,7 +1917,7 @@ void PPPM::particle_map()
 
   int flag = 0;
 
-  if (!ISFINITE(boxlo[0]) || !ISFINITE(boxlo[1]) || !ISFINITE(boxlo[2]))
+  if (!std::isfinite(boxlo[0]) || !std::isfinite(boxlo[1]) || !std::isfinite(boxlo[2]))
     error->one(FLERR,"Non-numeric box dimensions - simulation unstable");
 
   for (int i = 0; i < nlocal; i++) {
@@ -3076,7 +3103,7 @@ double PPPM::memory_usage()
     bytes += 2 * nfft_both * sizeof(FFT_SCALAR);;
   }
 
-  bytes += cg->memory_usage();
+  if (cg) bytes += cg->memory_usage();
 
   return bytes;
 }

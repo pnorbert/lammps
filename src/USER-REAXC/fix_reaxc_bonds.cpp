@@ -15,13 +15,13 @@
    Contributing author: Ray Shan (Sandia, tnshan@sandia.gov)
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "fix_ave_atom.h"
 #include "fix_reaxc_bonds.h"
 #include "atom.h"
 #include "update.h"
-#include "pair_reax_c.h"
+#include "pair_reaxc.h"
 #include "modify.h"
 #include "neighbor.h"
 #include "neigh_list.h"
@@ -58,10 +58,24 @@ FixReaxCBonds::FixReaxCBonds(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR,"Illegal fix reax/c/bonds command");
 
   if (me == 0) {
-    fp = fopen(arg[4],"w");
+    char *suffix = strrchr(arg[4],'.');
+    if (suffix && strcmp(suffix,".gz") == 0) {
+#ifdef LAMMPS_GZIP
+      char gzip[128];
+      snprintf(gzip,128,"gzip -6 > %s",arg[4]);
+#ifdef _WIN32
+      fp = _popen(gzip,"wb");
+#else
+      fp = popen(gzip,"w");
+#endif
+#else
+      error->one(FLERR,"Cannot open gzipped file");
+#endif
+    } else fp = fopen(arg[4],"w");
+
     if (fp == NULL) {
       char str[128];
-      sprintf(str,"Cannot open fix reax/c/bonds file %s",arg[4]);
+      snprintf(str,128,"Cannot open fix reax/c/bonds file %s",arg[4]);
       error->one(FLERR,str);
     }
   }
@@ -98,7 +112,7 @@ int FixReaxCBonds::setmask()
 
 /* ---------------------------------------------------------------------- */
 
-void FixReaxCBonds::setup(int vflag)
+void FixReaxCBonds::setup(int /*vflag*/)
 {
   end_of_step();
 }
@@ -107,13 +121,9 @@ void FixReaxCBonds::setup(int vflag)
 
 void FixReaxCBonds::init()
 {
-  Pair *pair_kk = force->pair_match("reax/c/kk",1);
-  if (pair_kk != NULL) error->all(FLERR,"Cannot (yet) use fix reax/c/bonds with "
-                  "pair_style reax/c/kk");
-
-  reaxc = (PairReaxC *) force->pair_match("reax/c",1);
+  reaxc = (PairReaxC *) force->pair_match("reax/c",0);
   if (reaxc == NULL) error->all(FLERR,"Cannot use fix reax/c/bonds without "
-                  "pair_style reax/c");
+                                "pair_style reax/c, reax/c/kk, or reax/c/omp");
 
 }
 
@@ -127,7 +137,7 @@ void FixReaxCBonds::end_of_step()
 
 /* ---------------------------------------------------------------------- */
 
-void FixReaxCBonds::Output_ReaxC_Bonds(bigint ntimestep, FILE *fp)
+void FixReaxCBonds::Output_ReaxC_Bonds(bigint /*ntimestep*/, FILE * /*fp*/)
 
 {
   int i, j;
@@ -175,7 +185,7 @@ void FixReaxCBonds::Output_ReaxC_Bonds(bigint ntimestep, FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-void FixReaxCBonds::FindBond(struct _reax_list *lists, int &numbonds)
+void FixReaxCBonds::FindBond(struct _reax_list * /*lists*/, int &numbonds)
 {
   int *ilist, i, ii, inum;
   int j, pj, nj;

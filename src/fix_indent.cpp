@@ -15,9 +15,9 @@
    Contributing author: Ravi Agrawal (Northwestern U)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <string.h>
-#include <stdlib.h>
+#include <cmath>
+#include <cstring>
+#include <cstdlib>
 #include "fix_indent.h"
 #include "atom.h"
 #include "input.h"
@@ -40,7 +40,8 @@ enum{INSIDE,OUTSIDE};
 /* ---------------------------------------------------------------------- */
 
 FixIndent::FixIndent(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  xstr(NULL), ystr(NULL), zstr(NULL), rstr(NULL), pstr(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal fix indent command");
 
@@ -181,7 +182,7 @@ void FixIndent::min_setup(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixIndent::post_force(int vflag)
+void FixIndent::post_force(int /*vflag*/)
 {
   // indenter values, 0 = energy, 1-3 = force components
   // wrap variable evaluations with clear/add
@@ -356,7 +357,7 @@ void FixIndent::post_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixIndent::post_force_respa(int vflag, int ilevel, int iloop)
+void FixIndent::post_force_respa(int vflag, int ilevel, int /*iloop*/)
 {
   if (ilevel == ilevel_respa) post_force(vflag);
 }

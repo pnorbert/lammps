@@ -20,7 +20,7 @@ FixStyle(ave/histo,FixAveHisto)
 #ifndef LMP_FIX_AVE_HISTO_H
 #define LMP_FIX_AVE_HISTO_H
 
-#include <stdio.h>
+#include <cstdio>
 #include "fix.h"
 
 namespace LAMMPS_NS {
@@ -66,7 +66,6 @@ class FixAveHisto : public Fix {
   void bin_vector(int, double *, int);
   void bin_atoms(double *, int);
   void options(int, int, char **);
-  void allocate_values(int);
   bigint nextvalid();
 };
 
@@ -83,13 +82,9 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
-E: Compute ID for fix ave/histo does not exist
+E: No values in fix ave/histo command
 
-Self-explanatory.
-
-E: Fix ID for fix ave/histo does not exist
-
-Self-explanatory.
+UNDOCUMENTED
 
 E: Fix ave/histo input is invalid compute
 
@@ -113,6 +108,10 @@ E: Fix ave/histo cannot input per-atom values in scalar mode
 Self-explanatory.
 
 E: Fix ave/histo cannot input local values in scalar mode
+
+Self-explanatory.
+
+E: Compute ID for fix ave/histo does not exist
 
 Self-explanatory.
 
@@ -157,6 +156,10 @@ E: Fix ave/histo compute does not calculate a local vector
 Self-explanatory.
 
 E: Fix ave/histo compute does not calculate a local array
+
+Self-explanatory.
+
+E: Fix ID for fix ave/histo does not exist
 
 Self-explanatory.
 
@@ -212,6 +215,22 @@ Self-explanatory.
 E: Variable name for fix ave/histo does not exist
 
 Self-explanatory.
+
+E: Fix ave/histo variable is not equal-style variable
+
+UNDOCUMENTED
+
+E: Fix ave/histo variable is not vector-style variable
+
+UNDOCUMENTED
+
+E: Fix ave/histo variable cannot be indexed
+
+UNDOCUMENTED
+
+E: Fix ave/histo variable is not atom-style variable
+
+UNDOCUMENTED
 
 E: Error writing file header
 

@@ -1,8 +1,8 @@
 // -------------------------------------------------------------
 // CUDPP -- CUDA Data Parallel Primitives library
 // -------------------------------------------------------------
-// $Revision$
-// $Date$
+// $Revision: 5289 $
+// $Date: 2010-11-23 13:04:43 -0700 (Tue, 23 Nov 2010) $
 // ------------------------------------------------------------- 
 // This source code is distributed under the terms of license.txt in
 // the root directory of this source distribution.
@@ -300,7 +300,7 @@
 #ifndef __CUDPP_H__
 #define __CUDPP_H__
 
-#include <stdlib.h> // for size_t
+#include <cstdlib> // for size_t
 
 #ifdef __cplusplus
 extern "C" {

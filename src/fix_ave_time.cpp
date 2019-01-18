@@ -15,8 +15,8 @@
    Contributing author: Pieter in 't Veld (SNL)
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include <unistd.h>
 #include "fix_ave_time.h"
 #include "update.h"
@@ -42,7 +42,12 @@ enum{SCALAR,VECTOR};
 /* ---------------------------------------------------------------------- */
 
 FixAveTime::FixAveTime(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  nvalues(0), which(NULL), argindex(NULL), value2index(NULL),
+  offcol(NULL), varlen(NULL), ids(NULL),
+  fp(NULL), offlist(NULL), format(NULL), format_user(NULL),
+  vector(NULL), vector_total(NULL), vector_list(NULL),
+  column(NULL), array(NULL), array_total(NULL), array_list(NULL)
 {
   if (narg < 7) error->all(FLERR,"Illegal fix ave/time command");
 
@@ -79,18 +84,20 @@ FixAveTime::FixAveTime(LAMMPS *lmp, int narg, char **arg) :
   // this can reset nvalues
 
   int expand = 0;
-  char **earg,**arghold;
+  char **earg;
   nvalues = input->expand_args(nvalues,&arg[6],mode,earg);
 
   if (earg != &arg[6]) expand = 1;
-  arghold = arg;
   arg = earg;
 
   // parse values
 
-  which = argindex = value2index = offcol = varlen = NULL;
-  ids = NULL;
-  allocate_values(nvalues);
+  which = new int[nvalues];
+  argindex = new int[nvalues];
+  value2index = new int[nvalues];
+  offcol = new int[nvalues];
+  varlen = new int[nvalues];
+  ids = new char*[nvalues];
 
   for (int i = 0; i < nvalues; i++) {
     if (arg[i][0] == 'c') which[i] = COMPUTE;
@@ -108,7 +115,7 @@ FixAveTime::FixAveTime(LAMMPS *lmp, int narg, char **arg) :
       argindex[i] = atoi(ptr+1);
       *ptr = '\0';
     } else argindex[i] = 0;
-    
+
     n = strlen(suffix) + 1;
     ids[i] = new char[n];
     strcpy(ids[i],suffix);
@@ -293,7 +300,6 @@ FixAveTime::FixAveTime(LAMMPS *lmp, int narg, char **arg) :
   if (expand) {
     for (int i = 0; i < nvalues; i++) delete [] earg[i];
     memory->sfree(earg);
-    arg = arghold;
   }
 
   // allocate memory for averaging
@@ -455,13 +461,13 @@ FixAveTime::~FixAveTime()
 
   delete [] format_user;
 
-  memory->destroy(which);
-  memory->destroy(argindex);
-  memory->destroy(value2index);
-  memory->destroy(offcol);
-  memory->destroy(varlen);
+  delete [] which;
+  delete [] argindex;
+  delete [] value2index;
+  delete [] offcol;
+  delete [] varlen;
   for (int i = 0; i < nvalues; i++) delete [] ids[i];
-  memory->sfree(ids);
+  delete [] ids;
 
   delete [] extlist;
 
@@ -523,7 +529,7 @@ void FixAveTime::init()
    only does something if nvalid = current timestep
 ------------------------------------------------------------------------- */
 
-void FixAveTime::setup(int vflag)
+void FixAveTime::setup(int /*vflag*/)
 {
   end_of_step();
 }
@@ -803,7 +809,7 @@ void FixAveTime::invoke_vector(bigint ntimestep)
     } else if (which[j] == VARIABLE) {
       double *varvec;
       int nvec = input->variable->compute_vector(m,&varvec);
-      if (nvec != nrows) 
+      if (nvec != nrows)
         error->all(FLERR,"Fix ave/time vector-style variable changed length");
       for (i = 0; i < nrows; i++)
         column[i] = varvec[i];
@@ -932,7 +938,7 @@ int FixAveTime::column_length(int dynamic)
         else lengthone = modify->fix[ifix]->size_array_rows;
       } else if (which[i] == VARIABLE) {
         // variables are always varlen = 1, so dynamic
-      } 
+      }
       if (length == 0) length = lengthone;
       else if (lengthone != length)
         error->all(FLERR,"Fix ave/time columns are inconsistent lengths");
@@ -1036,7 +1042,7 @@ void FixAveTime::options(int iarg, int narg, char **arg)
         fp = fopen(arg[iarg+1],"w");
         if (fp == NULL) {
           char str[128];
-          sprintf(str,"Cannot open fix ave/time file %s",arg[iarg+1]);
+          snprintf(str,128,"Cannot open fix ave/time file %s",arg[iarg+1]);
           error->one(FLERR,str);
         }
       }
@@ -1103,20 +1109,6 @@ void FixAveTime::options(int iarg, int narg, char **arg)
       iarg += 2;
     } else error->all(FLERR,"Illegal fix ave/time command");
   }
-}
-
-/* ----------------------------------------------------------------------
-   reallocate vectors for N input values
-------------------------------------------------------------------------- */
-
-void FixAveTime::allocate_values(int n)
-{
-  memory->grow(which,n,"ave/time:which");
-  memory->grow(argindex,n,"ave/time:argindex");
-  memory->grow(value2index,n,"ave/time:value2index");
-  memory->grow(offcol,n,"ave/time:offcol");
-  memory->grow(varlen,n,"ave/time:varlen");
-  ids = (char **) memory->srealloc(ids,n*sizeof(char *),"ave/time:ids");
 }
 
 /* ----------------------------------------------------------------------

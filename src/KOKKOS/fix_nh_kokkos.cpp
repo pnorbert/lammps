@@ -15,9 +15,9 @@
    Contributing author: Stan Moore (SNL)
 ------------------------------------------------------------------------- */
 
-#include <string.h>
-#include <stdlib.h>
-#include <math.h>
+#include <cstring>
+#include <cstdlib>
+#include <cmath>
 #include "fix_nh_kokkos.h"
 #include "math_extra.h"
 #include "atom.h"
@@ -33,7 +33,7 @@
 #include "update.h"
 #include "respa.h"
 #include "domain_kokkos.h"
-#include "memory.h"
+#include "memory_kokkos.h"
 #include "error.h"
 #include "atom_masks.h"
 #include "atom_kokkos.h"
@@ -55,6 +55,7 @@ enum{ISO,ANISO,TRICLINIC};
 template<class DeviceType>
 FixNHKokkos<DeviceType>::FixNHKokkos(LAMMPS *lmp, int narg, char **arg) : FixNH(lmp, narg, arg)
 {
+  kokkosable = 1;
   domainKK = (DomainKokkos *) domain;
   execution_space = ExecutionSpaceFromDevice<DeviceType>::space;
 
@@ -79,7 +80,7 @@ void FixNHKokkos<DeviceType>::init()
   FixNH::init();
 
   atomKK->k_mass.modify<LMPHostType>();
-  atomKK->k_mass.sync<LMPDeviceType>();
+  atomKK->k_mass.sync<DeviceType>();
 }
 
 /* ----------------------------------------------------------------------
@@ -147,7 +148,7 @@ void FixNHKokkos<DeviceType>::setup(int vflag)
 
   if (pstat_flag) {
     double kt = boltz * t_target;
-    double nkt = atom->natoms * kt;
+    double nkt = (atom->natoms + 1) * kt;
 
     for (int i = 0; i < 3; i++)
       if (p_flag[i])
@@ -268,7 +269,10 @@ void FixNHKokkos<DeviceType>::final_integrate()
     //atomKK->sync(pressure->execution_space,pressure->datamask_read);
     //atomKK->modified(pressure->execution_space,pressure->datamask_modify);
     if (pstyle == ISO) pressure->compute_scalar();
-    else pressure->compute_vector();
+    else {
+      temperature->compute_vector();
+      pressure->compute_vector();
+    }
     couple();
     pressure->addstep(update->ntimestep+1);
   }
@@ -494,7 +498,6 @@ void FixNHKokkos<DeviceType>::nh_v_press()
     Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagFixNH_nh_v_press<1> >(0,nlocal),*this);
   else
     Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagFixNH_nh_v_press<0> >(0,nlocal),*this);
-  DeviceType::fence();
   copymode = 0;
 
   atomKK->modified(execution_space,V_MASK);
@@ -537,7 +540,7 @@ void FixNHKokkos<DeviceType>::nve_v()
 
   v = atomKK->k_v.view<DeviceType>();
   f = atomKK->k_f.view<DeviceType>();
-  rmass = atomKK->rmass;
+  rmass = atomKK->k_rmass.view<DeviceType>();
   mass = atomKK->k_mass.view<DeviceType>();
   type = atomKK->k_type.view<DeviceType>();
   mask = atomKK->k_mask.view<DeviceType>();
@@ -545,11 +548,10 @@ void FixNHKokkos<DeviceType>::nve_v()
   if (igroup == atomKK->firstgroup) nlocal = atomKK->nfirst;
 
   copymode = 1;
-  if (rmass)
+  if (rmass.data())
     Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagFixNH_nve_v<1> >(0,nlocal),*this);
   else
     Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagFixNH_nve_v<0> >(0,nlocal),*this);
-  DeviceType::fence();
   copymode = 0;
 }
 
@@ -594,7 +596,6 @@ void FixNHKokkos<DeviceType>::nve_x()
 
   copymode = 1;
   Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagFixNH_nve_x>(0,nlocal),*this);
-  DeviceType::fence();
   copymode = 0;
 }
 
@@ -630,7 +631,6 @@ void FixNHKokkos<DeviceType>::nh_v_temp()
 
   copymode = 1;
   Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagFixNH_nh_v_temp>(0,nlocal),*this);
-  DeviceType::fence();
   copymode = 0;
 
   atomKK->modified(execution_space,V_MASK);

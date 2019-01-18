@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
+#include <cstring>
 #include "compute_vacf.h"
 #include "atom.h"
 #include "update.h"
@@ -25,7 +25,8 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeVACF::ComputeVACF(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg),
+  id_fix(NULL)
 {
   if (narg < 3) error->all(FLERR,"Illegal compute vacf command");
 
@@ -66,9 +67,9 @@ ComputeVACF::ComputeVACF(LAMMPS *lmp, int narg, char **arg) :
 
     for (int i = 0; i < nlocal; i++)
       if (mask[i] & groupbit) {
-	voriginal[i][0] = v[i][0];
-	voriginal[i][1] = v[i][1];
-	voriginal[i][2] = v[i][2];
+        voriginal[i][0] = v[i][0];
+        voriginal[i][1] = v[i][1];
+        voriginal[i][2] = v[i][2];
       } else voriginal[i][0] = voriginal[i][1] = voriginal[i][2] = 0.0;
   }
 

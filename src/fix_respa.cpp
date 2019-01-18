@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "fix_respa.h"
 #include "atom.h"
 #include "force.h"
@@ -24,7 +24,8 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixRespa::FixRespa(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  store_torque(0), f_level(NULL), t_level(NULL)
 {
   // nlevels = # of rRESPA levels
 
@@ -92,7 +93,7 @@ void FixRespa::grow_arrays(int nmax)
    copy values within local atom-based arrays
 ------------------------------------------------------------------------- */
 
-void FixRespa::copy_arrays(int i, int j, int delflag)
+void FixRespa::copy_arrays(int i, int j, int /*delflag*/)
 {
   for (int k = 0; k < nlevels; k++) {
     f_level[j][k][0] = f_level[i][k][0];

@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <string.h>
+#include <cstring>
 #include "compute_ke_atom.h"
 #include "atom.h"
 #include "update.h"
@@ -26,7 +26,8 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeKEAtom::ComputeKEAtom(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg)
+  Compute(lmp, narg, arg),
+  ke(NULL)
 {
   if (narg != 3) error->all(FLERR,"Illegal compute ke/atom command");
 
@@ -34,7 +35,6 @@ ComputeKEAtom::ComputeKEAtom(LAMMPS *lmp, int narg, char **arg) :
   size_peratom_cols = 0;
 
   nmax = 0;
-  ke = NULL;
 }
 
 /* ---------------------------------------------------------------------- */

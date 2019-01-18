@@ -1,3 +1,11 @@
+// -*- c++ -*-
+
+// This file is part of the Collective Variables module (Colvars).
+// The original version of Colvars and its updates are located at:
+// https://github.com/colvars/colvars
+// Please update all Colvars source files before making any changes.
+// If you wish to distribute your changes, please submit them to the
+// Colvars repository at GitHub.
 
 
 #include <sstream>
@@ -9,10 +17,7 @@
 
 
 // space & tab
-std::string const colvarparse::white_space = " \t";
-
-std::string colvarparse::dummy_string = "";
-size_t      colvarparse::dummy_pos = 0;
+char const * const colvarparse::white_space = " \t";
 
 
 // definition of single-value keyword parsers
@@ -29,7 +34,7 @@ template<typename TYPE> bool colvarparse::_get_keyval_scalar_(std::string const 
 
   do {
     std::string data_this = "";
-    b_found = key_lookup(conf, key, data_this, save_pos);
+    b_found = key_lookup(conf, key, &data_this, &save_pos);
     if (b_found) {
       if (!b_found_any)
         b_found_any = true;
@@ -38,9 +43,10 @@ template<typename TYPE> bool colvarparse::_get_keyval_scalar_(std::string const 
     }
   } while (b_found);
 
-  if (found_count > 1)
-    cvm::log("Warning: found more than one instance of \""+
-             std::string(key)+"\".\n");
+  if (found_count > 1) {
+    cvm::error("Error: found more than one instance of \""+
+               std::string(key)+"\".\n", INPUT_ERROR);
+  }
 
   if (data.size()) {
     std::istringstream is(data);
@@ -84,7 +90,7 @@ bool colvarparse::_get_keyval_scalar_string_(std::string const &conf,
 
   do {
     std::string data_this = "";
-    b_found = key_lookup(conf, key, data_this, save_pos);
+    b_found = key_lookup(conf, key, &data_this, &save_pos);
     if (b_found) {
       if (!b_found_any)
         b_found_any = true;
@@ -93,9 +99,10 @@ bool colvarparse::_get_keyval_scalar_string_(std::string const &conf,
     }
   } while (b_found);
 
-  if (found_count > 1)
-    cvm::log("Warning: found more than one instance of \""+
-             std::string(key)+"\".\n");
+  if (found_count > 1) {
+    cvm::error("Error: found more than one instance of \""+
+               std::string(key)+"\".\n", INPUT_ERROR);
+  }
 
   if (data.size()) {
     std::istringstream is(data);
@@ -148,7 +155,7 @@ template<typename TYPE> bool colvarparse::_get_keyval_vector_(std::string const 
 
   do {
     std::string data_this = "";
-    b_found = key_lookup(conf, key, data_this, save_pos);
+    b_found = key_lookup(conf, key, &data_this, &save_pos);
     if (b_found) {
       if (!b_found_any)
         b_found_any = true;
@@ -157,9 +164,10 @@ template<typename TYPE> bool colvarparse::_get_keyval_vector_(std::string const 
     }
   } while (b_found);
 
-  if (found_count > 1)
-    cvm::log("Warning: found more than one instance of \""+
-             std::string(key)+"\".\n");
+  if (found_count > 1) {
+    cvm::error("Error: found more than one instance of \""+
+               std::string(key)+"\".\n", INPUT_ERROR);
+  }
 
   if (data.size()) {
     std::istringstream is(data);
@@ -305,7 +313,7 @@ bool colvarparse::get_keyval(std::string const &conf,
 
   do {
     std::string data_this = "";
-    b_found = key_lookup(conf, key, data_this, save_pos);
+    b_found = key_lookup(conf, key, &data_this, &save_pos);
     if (b_found) {
       if (!b_found_any)
         b_found_any = true;
@@ -314,9 +322,10 @@ bool colvarparse::get_keyval(std::string const &conf,
     }
   } while (b_found);
 
-  if (found_count > 1)
-    cvm::log("Warning: found more than one instance of \""+
-             std::string(key)+"\".\n");
+  if (found_count > 1) {
+    cvm::error("Error: found more than one instance of \""+
+               std::string(key)+"\".\n", INPUT_ERROR);
+  }
 
   if (data.size()) {
     if ( (data == std::string("on")) ||
@@ -495,7 +504,7 @@ int colvarparse::check_keywords(std::string &conf, char const *key)
 
   std::string line;
   std::istringstream is(conf);
-  while (std::getline(is, line)) {
+  while (cvm::getline(is, line)) {
     if (line.size() == 0)
       continue;
     if (line.find_first_not_of(white_space) ==
@@ -524,17 +533,29 @@ int colvarparse::check_keywords(std::string &conf, char const *key)
     }
   }
 
-  init();
+  clear_keyword_registry();
 
   return COLVARS_OK;
 }
 
 
-std::istream & colvarparse::getline_nocomments(std::istream &is,
-                                               std::string &line,
-                                               char const delim)
+std::istream & colvarparse::read_config_line(std::istream &is,
+                                             std::string &line)
 {
-  std::getline(is, line, delim);
+  cvm::getline(is, line);
+  config_string += line+'\n';
+  size_t const comment = line.find('#');
+  if (comment != std::string::npos) {
+    line.erase(comment);
+  }
+  return is;
+}
+
+
+std::istream & colvarparse::getline_nocomments(std::istream &is,
+                                               std::string &line)
+{
+  cvm::getline(is, line);
   size_t const comment = line.find('#');
   if (comment != std::string::npos) {
     line.erase(comment);
@@ -545,9 +566,14 @@ std::istream & colvarparse::getline_nocomments(std::istream &is,
 
 bool colvarparse::key_lookup(std::string const &conf,
                              char const *key_in,
-                             std::string &data,
-                             size_t &save_pos)
+                             std::string *data,
+                             size_t *save_pos)
 {
+  if (cvm::debug()) {
+    cvm::log("Looking for the keyword \""+std::string(key_in)+
+             "\" and its value.\n");
+  }
+
   // add this keyword to the register (in its camelCase version)
   add_keyword(key_in);
 
@@ -559,27 +585,28 @@ bool colvarparse::key_lookup(std::string const &conf,
   std::string const conf_lower(to_lower_cppstr(conf));
 
   // by default, there is no value, unless we found one
-  data = "";
-
-  // when the function is invoked without save_pos, ensure that we
-  // start from zero
-  colvarparse::dummy_pos = 0;
+  if (data != NULL) {
+    data->clear();
+  }
 
   // start from the first occurrence of key
-  size_t pos = conf_lower.find(key, save_pos);
+  size_t pos = conf_lower.find(key, (save_pos != NULL) ? *save_pos : 0);
 
-  // iterate over all instances until it finds the isolated keyword
+  // iterate over all instances of the substring until it finds it as isolated keyword
   while (true) {
 
     if (pos == std::string::npos) {
       // no valid instance of the keyword has been found
+      if (cvm::debug()) {
+        cvm::log("Keyword \""+std::string(key_in)+"\" not found.\n");
+      }
       return false;
     }
 
     bool b_isolated_left = true, b_isolated_right = true;
 
     if (pos > 0) {
-      if ( std::string("\n"+white_space+
+      if ( std::string("\n"+std::string(white_space)+
                        "}").find(conf[pos-1]) ==
            std::string::npos ) {
         // none of the valid delimiting characters is on the left of key
@@ -588,7 +615,7 @@ bool colvarparse::key_lookup(std::string const &conf,
     }
 
     if (pos < conf.size()-key.size()-1) {
-      if ( std::string("\n"+white_space+
+      if ( std::string("\n"+std::string(white_space)+
                        "{").find(conf[pos+key.size()]) ==
            std::string::npos ) {
         // none of the valid delimiting characters is on the right of key
@@ -597,7 +624,7 @@ bool colvarparse::key_lookup(std::string const &conf,
     }
 
     // check that there are matching braces between here and the end of conf
-    bool const b_not_within_block = brace_check(conf, pos);
+    bool const b_not_within_block = (check_braces(conf, pos) == COLVARS_OK);
 
     bool const b_isolated = (b_isolated_left && b_isolated_right &&
                              b_not_within_block);
@@ -611,9 +638,11 @@ bool colvarparse::key_lookup(std::string const &conf,
     }
   }
 
+  if (save_pos != NULL) {
   // save the pointer for a future call (when iterating over multiple
   // valid instances of the same keyword)
-  save_pos = pos + key.size();
+    *save_pos = pos + key.size();
+  }
 
   // get the remainder of the line
   size_t pl = conf.rfind("\n", pos);
@@ -625,25 +654,46 @@ bool colvarparse::key_lookup(std::string const &conf,
   size_t data_begin = (to_lower_cppstr(line)).find(key) + key.size();
   data_begin = line.find_first_not_of(white_space, data_begin+1);
 
-  //   size_t data_begin_absolute = data_begin + line_begin;
-  //   size_t data_end_absolute   = data_begin;
-
   if (data_begin != std::string::npos) {
 
     size_t data_end = line.find_last_not_of(white_space) + 1;
     data_end = (data_end == std::string::npos) ? line.size() : data_end;
-    //     data_end_absolute = data_end + line_begin;
 
-    if (line.find('{', data_begin) != std::string::npos) {
+    size_t brace = line.find('{', data_begin);  // look for an opening brace
+    size_t brace_last = brace;
 
-      size_t brace_count = 1;
-      size_t brace = line.find('{', data_begin);  // start from the first opening brace
+    if (brace != std::string::npos) {
+
+      // find the matching closing brace
+
+//       if (cvm::debug()) {
+//         cvm::log("Multi-line value, config is now \""+line+"\".\n");
+//       }
+
+      int brace_count = 1;
 
       while (brace_count > 0) {
 
-        // find the matching closing brace
-        brace = line.find_first_of("{}", brace+1);
-        while (brace == std::string::npos) {
+        brace = line.find_first_of("{}", brace_last+1);
+        // find all braces within this line
+        while (brace < std::string::npos) {
+          brace_last = brace;
+          if (line[brace] == '{') brace_count++;
+          if (line[brace] == '}') brace_count--;
+          if (brace_count == 0) {
+            data_end = brace+1;
+            break;
+          }
+          brace = line.find_first_of("{}", brace+1);
+        }
+
+        if (brace_count == 0) {
+          data_end = brace+1;
+          break;
+        }
+
+        if (brace == std::string::npos) {
+
           // add a new line
           if (line_end >= conf.size()) {
             cvm::error("Parse error: reached the end while "
@@ -652,8 +702,6 @@ bool colvarparse::key_lookup(std::string const &conf,
                        line+"\".\n", INPUT_ERROR);
             return false;
           }
-          size_t const old_end = line.size();
-          //           data_end_absolute += old_end+1;
 
           line_begin = line_end;
           nl = conf.find('\n', line_begin+1);
@@ -663,40 +711,41 @@ bool colvarparse::key_lookup(std::string const &conf,
             line_end = nl;
           line.append(conf, line_begin, (line_end-line_begin));
 
-          brace = line.find_first_of("{}", old_end);
+//           if (cvm::debug()) {
+//             cvm::log("Added a new line, config is now \""+line+"\".\n");
+//           }
         }
 
-        if (line[brace] == '{') brace_count++;
-        if (line[brace] == '}') brace_count--;
+        if (brace_count < 0) {
+          cvm::error("Error: found closing brace without opening brace.\n", INPUT_ERROR);
+        }
       }
 
-      // set data_begin after the opening brace
-      data_begin = line.find_first_of('{', data_begin) + 1;
+      // strip the leading and trailing braces
+      data_begin = line.find_first_of('{') + 1;
       data_begin = line.find_first_not_of(white_space,
                                           data_begin);
-      // set data_end before the closing brace
-      data_end = brace;
-      data_end = line.find_last_not_of(white_space+"}",
-                                       data_end) + 1;
-      //       data_end_absolute = line_end;
 
-      if (data_end > line.size())
-        data_end = line.size();
+      data_end = line.find_last_of('}', line.size()) - 1;
+      data_end = line.find_last_not_of(white_space,
+                                       data_end) + 1;
     }
 
-    data.append(line, data_begin, (data_end-data_begin));
+    if (data != NULL) {
+      data->append(line, data_begin, (data_end-data_begin));
 
-    if (data.size() && save_delimiters) {
-      data_begin_pos.push_back(conf.find(data, pos+key.size()));
-      data_end_pos.push_back(data_begin_pos.back()+data.size());
-      //       std::cerr << "key = " << key << ", data = \""
-      //                 << data << "\", data_begin, data_end = "
-      //                 << data_begin_pos.back() << ", " << data_end_pos.back()
-      //                 << "\n";
+      if (cvm::debug()) {
+        cvm::log("Keyword value = \""+*data+"\".\n");
+      }
+
+      if (data->size()) {
+        data_begin_pos.push_back(conf.find(*data, pos+key.size()));
+        data_end_pos.push_back(data_begin_pos.back()+data->size());
+      }
     }
   }
 
-  save_pos = line_end;
+  if (save_pos != NULL) *save_pos = line_end;
 
   return true;
 }
@@ -749,19 +798,15 @@ std::istream & operator>> (std::istream &is, colvarparse::read_block const &rb)
 }
 
 
-bool colvarparse::brace_check(std::string const &conf,
+int colvarparse::check_braces(std::string const &conf,
                               size_t const start_pos)
 {
-  size_t brace_count = 0;
+  int brace_count = 0;
   size_t brace = start_pos;
-  while ( (brace = conf.find_first_of("{}", brace)) != std::string::npos) {
+  while ((brace = conf.find_first_of("{}", brace)) != std::string::npos) {
     if (conf[brace] == '{') brace_count++;
     if (conf[brace] == '}') brace_count--;
     brace++;
   }
-
-  if (brace_count != 0)
-    return false;
-  else
-    return true;
+  return (brace_count != 0) ? INPUT_ERROR : COLVARS_OK;
 }

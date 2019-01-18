@@ -11,9 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <string.h>
-#include <ctype.h>
+#include <cmath>
+#include <cstring>
+#include <cctype>
 #include "improper_hybrid.h"
 #include "atom.h"
 #include "neighbor.h"
@@ -105,7 +105,7 @@ void ImproperHybrid::compute(int eflag, int vflag)
   // accumulate sub-style global/peratom energy/virial in hybrid
 
   if (eflag || vflag) ev_setup(eflag,vflag);
-  else evflag = 0;
+  else evflag = eflag_global = vflag_global = eflag_atom = vflag_atom = 0;
 
   for (m = 0; m < nstyles; m++) {
     neighbor->nimproperlist = nimproperlist[m];
@@ -256,7 +256,7 @@ void ImproperHybrid::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  force->bounds(arg[0],atom->nimpropertypes,ilo,ihi);
+  force->bounds(FLERR,arg[0],atom->nimpropertypes,ilo,ihi);
 
   // 2nd arg = improper sub-style name
   // allow for "none" as valid sub-style name

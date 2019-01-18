@@ -15,10 +15,10 @@
    Contributing author: Mike Parks (SNL)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <float.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cfloat>
+#include <cstdlib>
+#include <cstring>
 #include "pair_peri_pmb.h"
 #include "atom.h"
 #include "domain.h"
@@ -297,7 +297,7 @@ void PairPeriPMB::allocate()
    global settings
 ------------------------------------------------------------------------- */
 
-void PairPeriPMB::settings(int narg, char **arg)
+void PairPeriPMB::settings(int narg, char **/*arg*/)
 {
   if (narg) error->all(FLERR,"Illegal pair_style command");
 }
@@ -312,8 +312,8 @@ void PairPeriPMB::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double kspring_one = force->numeric(FLERR,arg[2]);
   double cut_one = force->numeric(FLERR,arg[3]);
@@ -441,7 +441,7 @@ void PairPeriPMB::read_restart(FILE *fp)
 /* ---------------------------------------------------------------------- */
 
 double PairPeriPMB::single(int i, int j, int itype, int jtype, double rsq,
-                           double factor_coul, double factor_lj,
+                           double /*factor_coul*/, double /*factor_lj*/,
                            double &fforce)
 {
   double delx0,dely0,delz0,rsq0;

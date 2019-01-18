@@ -17,9 +17,9 @@
 
 #include "fix_tfmc.h"
 #include <mpi.h>
-#include <string.h>
-#include <math.h>
-#include <float.h>
+#include <cstring>
+#include <cmath>
+#include <cfloat>
 #include "atom.h"
 #include "force.h"
 #include "update.h"
@@ -37,7 +37,8 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixTFMC::FixTFMC(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  xd(NULL), rotflag(0), random_num(NULL)
 {
   if (narg < 6) error->all(FLERR,"Illegal fix tfmc command");
 
@@ -157,7 +158,7 @@ void FixTFMC::init()
 
 /* ---------------------------------------------------------------------- */
 
-void FixTFMC::initial_integrate(int vflag)
+void FixTFMC::initial_integrate(int /*vflag*/)
 {
   double boltz = force->boltz;
   double **x = atom->x;
@@ -234,7 +235,7 @@ void FixTFMC::initial_integrate(int vflag)
       xcm_dall[1] /= masstotal;
       xcm_dall[2] /= masstotal;
     } else xcm_dall[0] = xcm_dall[1] = xcm_dall[2] = 0.0;
-    
+
     for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
         if (xflag) x[i][0] -= xcm_dall[0];
@@ -254,11 +255,11 @@ void FixTFMC::initial_integrate(int vflag)
     group->xcm(igroup,masstotal,cm);
 
     // to zero rotations, we can employ the same principles the
-	// velocity command uses to zero the angular momentum. of course,
-	// there is no (conserved) momentum in MC, but we can substitute
-	// "velocities" by a displacement vector and proceed from there.
-	// this of course requires "forking" group->angmom(), which is
-	// what we do here.
+        // velocity command uses to zero the angular momentum. of course,
+        // there is no (conserved) momentum in MC, but we can substitute
+        // "velocities" by a displacement vector and proceed from there.
+        // this of course requires "forking" group->angmom(), which is
+        // what we do here.
 
     double p[3];
     p[0] = p[1] = p[2] = 0.0;

@@ -11,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include "fix_ave_atom.h"
 #include "atom.h"
 #include "domain.h"
@@ -35,7 +35,9 @@ enum{X,V,F,COMPUTE,FIX,VARIABLE};
 /* ---------------------------------------------------------------------- */
 
 FixAveAtom::FixAveAtom(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
+  Fix(lmp, narg, arg),
+  nvalues(0), which(NULL), argindex(NULL), value2index(NULL),
+  ids(NULL), array(NULL)
 {
   if (narg < 7) error->all(FLERR,"Illegal fix ave/atom command");
 
@@ -49,11 +51,10 @@ FixAveAtom::FixAveAtom(LAMMPS *lmp, int narg, char **arg) :
   // this can reset nvalues
 
   int expand = 0;
-  char **earg,**arghold;
+  char **earg;
   nvalues = input->expand_args(nvalues,&arg[6],1,earg);
 
   if (earg != &arg[6]) expand = 1;
-  arghold = arg;
   arg = earg;
 
   // parse values
@@ -68,33 +69,33 @@ FixAveAtom::FixAveAtom(LAMMPS *lmp, int narg, char **arg) :
 
     if (strcmp(arg[i],"x") == 0) {
       which[i] = X;
-      argindex[i++] = 0;
+      argindex[i] = 0;
     } else if (strcmp(arg[i],"y") == 0) {
       which[i] = X;
-      argindex[i++] = 1;
+      argindex[i] = 1;
     } else if (strcmp(arg[i],"z") == 0) {
       which[i] = X;
-      argindex[i++] = 2;
+      argindex[i] = 2;
 
     } else if (strcmp(arg[i],"vx") == 0) {
       which[i] = V;
-      argindex[i++] = 0;
+      argindex[i] = 0;
     } else if (strcmp(arg[i],"vy") == 0) {
       which[i] = V;
-      argindex[i++] = 1;
+      argindex[i] = 1;
     } else if (strcmp(arg[i],"vz") == 0) {
       which[i] = V;
-      argindex[i++] = 2;
+      argindex[i] = 2;
 
     } else if (strcmp(arg[i],"fx") == 0) {
       which[i] = F;
-      argindex[i++] = 0;
+      argindex[i] = 0;
     } else if (strcmp(arg[i],"fy") == 0) {
       which[i] = F;
-      argindex[i++] = 1;
+      argindex[i] = 1;
     } else if (strcmp(arg[i],"fz") == 0) {
       which[i] = F;
-      argindex[i++] = 2;
+      argindex[i] = 2;
 
     } else if (strncmp(arg[i],"c_",2) == 0 ||
                strncmp(arg[i],"f_",2) == 0 ||
@@ -128,7 +129,6 @@ FixAveAtom::FixAveAtom(LAMMPS *lmp, int narg, char **arg) :
   if (expand) {
     for (int i = 0; i < nvalues; i++) delete [] earg[i];
     memory->sfree(earg);
-    arg = arghold;
   }
 
   // setup and error check
@@ -194,7 +194,6 @@ FixAveAtom::FixAveAtom(LAMMPS *lmp, int narg, char **arg) :
   // perform initial allocation of atom-based array
   // register with Atom class
 
-  array = NULL;
   grow_arrays(atom->nmax);
   atom->add_callback(0);
 
@@ -284,7 +283,7 @@ void FixAveAtom::init()
    only does something if nvalid = current timestep
 ------------------------------------------------------------------------- */
 
-void FixAveAtom::setup(int vflag)
+void FixAveAtom::setup(int /*vflag*/)
 {
   end_of_step();
 }
@@ -433,7 +432,7 @@ void FixAveAtom::grow_arrays(int nmax)
    copy values within local atom-based array
 ------------------------------------------------------------------------- */
 
-void FixAveAtom::copy_arrays(int i, int j, int delflag)
+void FixAveAtom::copy_arrays(int i, int j, int /*delflag*/)
 {
   for (int m = 0; m < nvalues; m++)
     array[j][m] = array[i][m];

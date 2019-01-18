@@ -11,10 +11,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_thole.h"
 #include "atom.h"
 #include "comm.h"
@@ -25,6 +25,8 @@
 #include "error.h"
 #include "fix.h"
 #include "fix_store.h"
+#include "domain.h"
+#include "modify.h"
 
 using namespace LAMMPS_NS;
 
@@ -199,11 +201,11 @@ void PairThole::settings(int narg, char **arg)
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i+1; j <= atom->ntypes; j++)
-          if (setflag[i][j]) {
-              thole[i][j] = thole_global;
-              cut[i][j] = cut_global;
-          }
+      for (j = i; j <= atom->ntypes; j++)
+        if (setflag[i][j]) {
+          thole[i][j] = thole_global;
+          cut[i][j] = cut_global;
+        }
   }
 }
 
@@ -218,8 +220,8 @@ void PairThole::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double polar_one = force->numeric(FLERR,arg[2]);
   double thole_one = thole_global;
@@ -361,7 +363,7 @@ void PairThole::read_restart_settings(FILE *fp)
 /* ---------------------------------------------------------------------- */
 
 double PairThole::single(int i, int j, int itype, int jtype,
-                         double rsq, double factor_coul, double factor_lj,
+                         double rsq, double factor_coul, double /*factor_lj*/,
                          double &fforce)
 {
   double r2inv,rinv,r,phicoul;

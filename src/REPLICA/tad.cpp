@@ -21,9 +21,9 @@
 
 #include "lmptype.h"
 #include <mpi.h>
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include "tad.h"
 #include "universe.h"
 #include "update.h"
@@ -43,8 +43,6 @@
 #include "fix_store.h"
 #include "force.h"
 #include "pair.h"
-#include "random_park.h"
-#include "random_mars.h"
 #include "output.h"
 #include "dump.h"
 #include "finish.h"
@@ -249,7 +247,7 @@ void TAD::command(int narg, char **arg)
   // need this line if quench() does only setup_minimal()
   // update->minimize->setup();
 
-  // This should work with if uncommented, but does not
+  // this should work with if statement uncommented, but does not
   // if (universe->iworld == 0) {
 
   fix_event->store_state_quench();
@@ -266,7 +264,7 @@ void TAD::command(int narg, char **arg)
 
   update->whichflag = 1;
   lmp->init();
-  update->integrate->setup();
+  update->integrate->setup(1);
 
   // main loop: look for events until out of time
   // (1) dynamics, store state, quench, check event, restore state
@@ -276,6 +274,7 @@ void TAD::command(int narg, char **arg)
   nbuild = ndanger = 0;
   time_neb = time_dynamics = time_quench = time_comm = time_output = 0.0;
 
+  timer->init();
   timer->barrier_start();
   time_start = timer->get_wall(Timer::TOTAL);
 
@@ -343,7 +342,7 @@ void TAD::command(int narg, char **arg)
 
       update->whichflag = 1;
       lmp->init();
-      update->integrate->setup();
+      update->integrate->setup(1);
 
     // write restart file of hot coords
 
@@ -399,12 +398,14 @@ void TAD::command(int narg, char **arg)
       fprintf(universe->uscreen,
               "Loop time of %g on %d procs for %d steps with " BIGINT_FORMAT
               " atoms\n",
-              timer->get_wall(Timer::TOTAL),nprocs_universe,nsteps,atom->natoms);
+              timer->get_wall(Timer::TOTAL),nprocs_universe,
+              nsteps,atom->natoms);
     if (universe->ulogfile)
       fprintf(universe->ulogfile,
               "Loop time of %g on %d procs for %d steps with " BIGINT_FORMAT
               " atoms\n",
-              timer->get_wall(Timer::TOTAL),nprocs_universe,nsteps,atom->natoms);
+              timer->get_wall(Timer::TOTAL),nprocs_universe,
+              nsteps,atom->natoms);
   }
 
   if ((me_universe == 0) && ulogfile_neb) fclose(ulogfile_neb);
@@ -447,7 +448,7 @@ void TAD::dynamics()
   update->nsteps = t_event;
 
   lmp->init();
-  update->integrate->setup();
+  update->integrate->setup(1);
   // this may be needed if don't do full init
   //modify->addstep_compute_all(update->ntimestep);
   int ncalls = neighbor->ncalls;
@@ -711,10 +712,7 @@ void TAD::perform_neb(int ievent)
   args[0] = (char *) "neb";
   args[1] = (char *) "all";
   args[2] = (char *) "neb";
-  char str[128];
-  args[3] = str;
-  double kspring = 1.0;
-  sprintf(args[3],"%f",kspring);
+  args[3] = (char *) "1.0";
   modify->add_fix(narg2,args);
   fix_neb = (Fix *) modify->fix[modify->nfix-1];
   delete [] args;
@@ -874,7 +872,7 @@ void TAD::revert_state()
 }
 
 /* ----------------------------------------------------------------------
-   Initialize list of possible events
+   initialize list of possible events
 ------------------------------------------------------------------------- */
 
 void TAD::initialize_event_list() {
@@ -890,7 +888,7 @@ void TAD::initialize_event_list() {
 }
 
 /* ----------------------------------------------------------------------
-   Delete list of possible events
+   delete list of possible events
 ------------------------------------------------------------------------- */
 
 void TAD::delete_event_list() {

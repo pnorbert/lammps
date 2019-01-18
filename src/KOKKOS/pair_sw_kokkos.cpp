@@ -15,10 +15,10 @@
    Contributing author: Stan Moore (SNL)
 ------------------------------------------------------------------------- */
 
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include "pair_sw_kokkos.h"
 #include "kokkos.h"
 #include "pair_kokkos.h"
@@ -27,10 +27,10 @@
 #include "neigh_request.h"
 #include "force.h"
 #include "comm.h"
-#include "memory.h"
+#include "memory_kokkos.h"
 #include "neighbor.h"
 #include "neigh_list_kokkos.h"
-#include "memory.h"
+#include "memory_kokkos.h"
 #include "error.h"
 #include "atom_masks.h"
 #include "math_const.h"
@@ -63,8 +63,8 @@ template<class DeviceType>
 PairSWKokkos<DeviceType>::~PairSWKokkos()
 {
   if (!copymode) {
-    memory->destroy_kokkos(k_eatom,eatom);
-    memory->destroy_kokkos(k_vatom,vatom);
+    memoryKK->destroy_kokkos(k_eatom,eatom);
+    memoryKK->destroy_kokkos(k_vatom,vatom);
     eatom = NULL;
     vatom = NULL;
   }
@@ -80,20 +80,20 @@ void PairSWKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
 
   if (neighflag == FULL) no_virial_fdotr_compute = 1;
 
-  if (eflag || vflag) ev_setup(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag,0);
   else evflag = vflag_fdotr = 0;
 
   // reallocate per-atom arrays if necessary
 
   if (eflag_atom) {
-    memory->destroy_kokkos(k_eatom,eatom);
-    memory->create_kokkos(k_eatom,eatom,maxeatom,"pair:eatom");
-    d_eatom = k_eatom.d_view;
+    memoryKK->destroy_kokkos(k_eatom,eatom);
+    memoryKK->create_kokkos(k_eatom,eatom,maxeatom,"pair:eatom");
+    d_eatom = k_eatom.view<DeviceType>();
   }
   if (vflag_atom) {
-    memory->destroy_kokkos(k_vatom,vatom);
-    memory->create_kokkos(k_vatom,vatom,maxvatom,6,"pair:vatom");
-    d_vatom = k_vatom.d_view;
+    memoryKK->destroy_kokkos(k_vatom,vatom);
+    memoryKK->create_kokkos(k_vatom,vatom,maxvatom,6,"pair:vatom");
+    d_vatom = k_vatom.view<DeviceType>();
   }
 
   atomKK->sync(execution_space,datamask_read);
@@ -115,11 +115,33 @@ void PairSWKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
   d_numneigh = k_list->d_numneigh;
   d_neighbors = k_list->d_neighbors;
 
-  k_list->clean_copy();
+  need_dup = lmp->kokkos->need_dup<DeviceType>();
+  if (need_dup) {
+    dup_f     = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterDuplicated>(f);
+    dup_eatom = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterDuplicated>(d_eatom);
+    dup_vatom = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterDuplicated>(d_vatom);
+  } else {
+    ndup_f     = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterNonDuplicated>(f);
+    ndup_eatom = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterNonDuplicated>(d_eatom);
+    ndup_vatom = Kokkos::Experimental::create_scatter_view<Kokkos::Experimental::ScatterSum, Kokkos::Experimental::ScatterNonDuplicated>(d_vatom);
+  }
+
   copymode = 1;
 
   EV_FLOAT ev;
   EV_FLOAT ev_all;
+
+  // build short neighbor list
+
+  int max_neighs = d_neighbors.extent(1);
+
+  if ((d_neighbors_short.extent(1) != max_neighs) ||
+     (d_neighbors_short.extent(0) != ignum)) {
+    d_neighbors_short = Kokkos::View<int**,DeviceType>("SW::neighbors_short",ignum,max_neighs);
+  }
+  if (d_numneigh_short.extent(0)!=ignum)
+    d_numneigh_short = Kokkos::View<int*,DeviceType>("SW::numneighs_short",ignum);
+  Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType,TagPairSWComputeShortNeigh>(0,neighflag==FULL?ignum:inum), *this);
 
   // loop over neighbor list of my atoms
 
@@ -149,6 +171,9 @@ void PairSWKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
     ev_all += ev;
   }
 
+  if (need_dup)
+    Kokkos::Experimental::contribute(f, dup_f);
+
   if (eflag_global) eng_vdwl += ev_all.evdwl;
   if (vflag_global) {
     virial[0] += ev_all.v[0];
@@ -159,29 +184,73 @@ void PairSWKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
     virial[5] += ev_all.v[5];
   }
 
-  if (vflag_fdotr) pair_virial_fdotr_compute(this);
-
   if (eflag_atom) {
+    if (need_dup)
+      Kokkos::Experimental::contribute(d_eatom, dup_eatom);
     k_eatom.template modify<DeviceType>();
     k_eatom.template sync<LMPHostType>();
   }
 
   if (vflag_atom) {
+    if (need_dup)
+      Kokkos::Experimental::contribute(d_vatom, dup_vatom);
     k_vatom.template modify<DeviceType>();
     k_vatom.template sync<LMPHostType>();
   }
 
+  if (vflag_fdotr) pair_virial_fdotr_compute(this);
+
   copymode = 0;
+
+  // free duplicated memory
+  if (need_dup) {
+    dup_f            = decltype(dup_f)();
+    dup_eatom        = decltype(dup_eatom)();
+    dup_vatom        = decltype(dup_vatom)();
+  }
 }
+
+
+/* ---------------------------------------------------------------------- */
+
+template<class DeviceType>
+KOKKOS_INLINE_FUNCTION
+void PairSWKokkos<DeviceType>::operator()(TagPairSWComputeShortNeigh, const int& ii) const {
+    const int i = d_ilist[ii];
+    const X_FLOAT xtmp = x(i,0);
+    const X_FLOAT ytmp = x(i,1);
+    const X_FLOAT ztmp = x(i,2);
+
+    const int jnum = d_numneigh[i];
+    int inside = 0;
+    for (int jj = 0; jj < jnum; jj++) {
+      int j = d_neighbors(i,jj);
+      j &= NEIGHMASK;
+
+      const X_FLOAT delx = xtmp - x(j,0);
+      const X_FLOAT dely = ytmp - x(j,1);
+      const X_FLOAT delz = ztmp - x(j,2);
+      const F_FLOAT rsq = delx*delx + dely*dely + delz*delz;
+
+      if (rsq < cutmax*cutmax) {
+        d_neighbors_short(i,inside) = j;
+        inside++;
+      }
+    }
+    d_numneigh_short(i) = inside;
+}
+
+/* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
 template<int NEIGHFLAG, int EVFLAG>
 KOKKOS_INLINE_FUNCTION
 void PairSWKokkos<DeviceType>::operator()(TagPairSWComputeHalf<NEIGHFLAG,EVFLAG>, const int &ii, EV_FLOAT& ev) const {
 
-  // The f array is atomic
+  // The f array is duplicated for OpenMP, atomic for CUDA, and neither for Serial
 
-  Kokkos::View<F_FLOAT*[3], typename DAT::t_f_array::array_layout,DeviceType,Kokkos::MemoryTraits<AtomicF<NEIGHFLAG>::value> > a_f = f;
+  auto v_f = ScatterViewHelper<NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_f),decltype(ndup_f)>::get(dup_f,ndup_f);
+  auto a_f = v_f.template access<AtomicDup<NEIGHFLAG,DeviceType>::value>();
 
   F_FLOAT delr1[3],delr2[3],fj[3],fk[3];
   F_FLOAT evdwl = 0.0;
@@ -196,14 +265,14 @@ void PairSWKokkos<DeviceType>::operator()(TagPairSWComputeHalf<NEIGHFLAG,EVFLAG>
 
   // two-body interactions, skip half of them
 
-  const int jnum = d_numneigh[i];
+  const int jnum = d_numneigh_short[i];
 
   F_FLOAT fxtmpi = 0.0;
   F_FLOAT fytmpi = 0.0;
   F_FLOAT fztmpi = 0.0;
 
   for (int jj = 0; jj < jnum; jj++) {
-    int j = d_neighbors(i,jj);
+    int j = d_neighbors_short(i,jj);
     j &= NEIGHMASK;
     const tagint jtag = tag[j];
 
@@ -245,7 +314,7 @@ void PairSWKokkos<DeviceType>::operator()(TagPairSWComputeHalf<NEIGHFLAG,EVFLAG>
   const int jnumm1 = jnum - 1;
 
   for (int jj = 0; jj < jnumm1; jj++) {
-    int j = d_neighbors(i,jj);
+    int j = d_neighbors_short(i,jj);
     j &= NEIGHMASK;
     const int jtype = d_map[type[j]];
     const int ijparam = d_elem2param(itype,jtype,jtype);
@@ -260,7 +329,7 @@ void PairSWKokkos<DeviceType>::operator()(TagPairSWComputeHalf<NEIGHFLAG,EVFLAG>
     F_FLOAT fztmpj = 0.0;
 
     for (int kk = jj+1; kk < jnum; kk++) {
-      int k = d_neighbors(i,kk);
+      int k = d_neighbors_short(i,kk);
       k &= NEIGHMASK;
       const int ktype = d_map[type[k]];
       const int ikparam = d_elem2param(itype,ktype,ktype);
@@ -331,14 +400,14 @@ void PairSWKokkos<DeviceType>::operator()(TagPairSWComputeFullA<NEIGHFLAG,EVFLAG
 
   // two-body interactions
 
-  const int jnum = d_numneigh[i];
+  const int jnum = d_numneigh_short[i];
 
   F_FLOAT fxtmpi = 0.0;
   F_FLOAT fytmpi = 0.0;
   F_FLOAT fztmpi = 0.0;
 
   for (int jj = 0; jj < jnum; jj++) {
-    int j = d_neighbors(i,jj);
+    int j = d_neighbors_short(i,jj);
     j &= NEIGHMASK;
     const tagint jtag = tag[j];
 
@@ -368,7 +437,7 @@ void PairSWKokkos<DeviceType>::operator()(TagPairSWComputeFullA<NEIGHFLAG,EVFLAG
   const int jnumm1 = jnum - 1;
 
   for (int jj = 0; jj < jnumm1; jj++) {
-    int j = d_neighbors(i,jj);
+    int j = d_neighbors_short(i,jj);
     j &= NEIGHMASK;
     const int jtype = d_map[type[j]];
     const int ijparam = d_elem2param(itype,jtype,jtype);
@@ -380,7 +449,7 @@ void PairSWKokkos<DeviceType>::operator()(TagPairSWComputeFullA<NEIGHFLAG,EVFLAG
     if (rsq1 >= d_params[ijparam].cutsq) continue;
 
     for (int kk = jj+1; kk < jnum; kk++) {
-      int k = d_neighbors(i,kk);
+      int k = d_neighbors_short(i,kk);
       k &= NEIGHMASK;
       const int ktype = d_map[type[k]];
       const int ikparam = d_elem2param(itype,ktype,ktype);
@@ -429,7 +498,6 @@ void PairSWKokkos<DeviceType>::operator()(TagPairSWComputeFullB<NEIGHFLAG,EVFLAG
 
   F_FLOAT delr1[3],delr2[3],fj[3],fk[3];
   F_FLOAT evdwl = 0.0;
-  F_FLOAT fpair = 0.0;
 
   const int i = d_ilist[ii];
 
@@ -438,14 +506,14 @@ void PairSWKokkos<DeviceType>::operator()(TagPairSWComputeFullB<NEIGHFLAG,EVFLAG
   const X_FLOAT ytmpi = x(i,1);
   const X_FLOAT ztmpi = x(i,2);
 
-  const int jnum = d_numneigh[i];
+  const int jnum = d_numneigh_short[i];
 
   F_FLOAT fxtmpi = 0.0;
   F_FLOAT fytmpi = 0.0;
   F_FLOAT fztmpi = 0.0;
 
   for (int jj = 0; jj < jnum; jj++) {
-    int j = d_neighbors(i,jj);
+    int j = d_neighbors_short(i,jj);
     j &= NEIGHMASK;
     if (j >= nlocal) continue;
     const int jtype = d_map[type[j]];
@@ -461,10 +529,10 @@ void PairSWKokkos<DeviceType>::operator()(TagPairSWComputeFullB<NEIGHFLAG,EVFLAG
 
     if (rsq1 >= d_params[jiparam].cutsq) continue;
 
-    const int j_jnum = d_numneigh[j];
+    const int j_jnum = d_numneigh_short[j];
 
     for (int kk = 0; kk < j_jnum; kk++) {
-      int k = d_neighbors(j,kk);
+      int k = d_neighbors_short(j,kk);
       k &= NEIGHMASK;
       if (k == i) continue;
       const int ktype = d_map[type[k]];
@@ -529,7 +597,7 @@ void PairSWKokkos<DeviceType>::coeff(int narg, char **arg)
   k_map.template modify<LMPHostType>();
   k_map.template sync<DeviceType>();
 
-  d_map = k_map.d_view;
+  d_map = k_map.template view<DeviceType>();
 }
 
 /* ----------------------------------------------------------------------
@@ -557,7 +625,6 @@ void PairSWKokkos<DeviceType>::init_style()
   if (neighflag == FULL || neighflag == HALF || neighflag == HALFTHREAD) {
     neighbor->requests[irequest]->full = 1;
     neighbor->requests[irequest]->half = 0;
-    neighbor->requests[irequest]->full_cluster = 0;
     if (neighflag == FULL)
       neighbor->requests[irequest]->ghost = 1;
     else
@@ -595,8 +662,8 @@ void PairSWKokkos<DeviceType>::setup_params()
   k_params.template modify<LMPHostType>();
   k_params.template sync<DeviceType>();
 
-  d_elem2param = k_elem2param.d_view;
-  d_params = k_params.d_view;
+  d_elem2param = k_elem2param.template view<DeviceType>();
+  d_params = k_params.template view<DeviceType>();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -736,17 +803,19 @@ void PairSWKokkos<DeviceType>::ev_tally(EV_FLOAT &ev, const int &i, const int &j
 {
   const int VFLAG = vflag_either;
 
-  // The eatom and vatom arrays are atomic for half/thread neighbor list
+  // The eatom and vatom arrays are duplicated for OpenMP, atomic for CUDA, and neither for Serial
 
-  Kokkos::View<E_FLOAT*, typename DAT::t_efloat_1d::array_layout,DeviceType,Kokkos::MemoryTraits<AtomicF<NEIGHFLAG>::value> > v_eatom = k_eatom.view<DeviceType>();
-  Kokkos::View<F_FLOAT*[6], typename DAT::t_virial_array::array_layout,DeviceType,Kokkos::MemoryTraits<AtomicF<NEIGHFLAG>::value> > v_vatom = k_vatom.view<DeviceType>();
+  auto v_eatom = ScatterViewHelper<NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_eatom),decltype(ndup_eatom)>::get(dup_eatom,ndup_eatom);
+  auto a_eatom = v_eatom.template access<AtomicDup<NEIGHFLAG,DeviceType>::value>();
 
+  auto v_vatom = ScatterViewHelper<NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_vatom),decltype(ndup_vatom)>::get(dup_vatom,ndup_vatom);
+  auto a_vatom = v_vatom.template access<AtomicDup<NEIGHFLAG,DeviceType>::value>();
 
   if (eflag_atom) {
     const E_FLOAT epairhalf = 0.5 * epair;
-    v_eatom[i] += epairhalf;
+    a_eatom[i] += epairhalf;
     if (NEIGHFLAG != FULL)
-      v_eatom[j] += epairhalf;
+      a_eatom[j] += epairhalf;
   }
 
   if (VFLAG) {
@@ -776,20 +845,20 @@ void PairSWKokkos<DeviceType>::ev_tally(EV_FLOAT &ev, const int &i, const int &j
     }
 
     if (vflag_atom) {
-      v_vatom(i,0) += 0.5*v0;
-      v_vatom(i,1) += 0.5*v1;
-      v_vatom(i,2) += 0.5*v2;
-      v_vatom(i,3) += 0.5*v3;
-      v_vatom(i,4) += 0.5*v4;
-      v_vatom(i,5) += 0.5*v5;
+      a_vatom(i,0) += 0.5*v0;
+      a_vatom(i,1) += 0.5*v1;
+      a_vatom(i,2) += 0.5*v2;
+      a_vatom(i,3) += 0.5*v3;
+      a_vatom(i,4) += 0.5*v4;
+      a_vatom(i,5) += 0.5*v5;
 
       if (NEIGHFLAG != FULL) {
-        v_vatom(j,0) += 0.5*v0;
-        v_vatom(j,1) += 0.5*v1;
-        v_vatom(j,2) += 0.5*v2;
-        v_vatom(j,3) += 0.5*v3;
-        v_vatom(j,4) += 0.5*v4;
-        v_vatom(j,5) += 0.5*v5;
+        a_vatom(j,0) += 0.5*v0;
+        a_vatom(j,1) += 0.5*v1;
+        a_vatom(j,2) += 0.5*v2;
+        a_vatom(j,3) += 0.5*v3;
+        a_vatom(j,4) += 0.5*v4;
+        a_vatom(j,5) += 0.5*v5;
       }
     }
   }
@@ -812,17 +881,20 @@ void PairSWKokkos<DeviceType>::ev_tally3(EV_FLOAT &ev, const int &i, const int &
 
   const int VFLAG = vflag_either;
 
-// The eatom and vatom arrays are atomic for half/thread neighbor list
+  // The eatom and vatom arrays are duplicated for OpenMP, atomic for CUDA, and neither for Serial
 
-  Kokkos::View<E_FLOAT*, typename DAT::t_efloat_1d::array_layout,DeviceType,Kokkos::MemoryTraits<AtomicF<NEIGHFLAG>::value> > v_eatom = k_eatom.view<DeviceType>();
-  Kokkos::View<F_FLOAT*[6], typename DAT::t_virial_array::array_layout,DeviceType,Kokkos::MemoryTraits<AtomicF<NEIGHFLAG>::value> > v_vatom = k_vatom.view<DeviceType>();
+  auto v_eatom = ScatterViewHelper<NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_eatom),decltype(ndup_eatom)>::get(dup_eatom,ndup_eatom);
+  auto a_eatom = v_eatom.template access<AtomicDup<NEIGHFLAG,DeviceType>::value>();
+
+  auto v_vatom = ScatterViewHelper<NeedDup<NEIGHFLAG,DeviceType>::value,decltype(dup_vatom),decltype(ndup_vatom)>::get(dup_vatom,ndup_vatom);
+  auto a_vatom = v_vatom.template access<AtomicDup<NEIGHFLAG,DeviceType>::value>();
 
   if (eflag_atom) {
     epairthird = THIRD * (evdwl + ecoul);
-    v_eatom[i] += epairthird;
+    a_eatom[i] += epairthird;
     if (NEIGHFLAG != FULL) {
-      v_eatom[j] += epairthird;
-      v_eatom[k] += epairthird;
+      a_eatom[j] += epairthird;
+      a_eatom[k] += epairthird;
     }
   }
 
@@ -844,18 +916,18 @@ void PairSWKokkos<DeviceType>::ev_tally3(EV_FLOAT &ev, const int &i, const int &
     }
 
     if (vflag_atom) {
-      v_vatom(i,0) += THIRD*v[0]; v_vatom(i,1) += THIRD*v[1];
-      v_vatom(i,2) += THIRD*v[2]; v_vatom(i,3) += THIRD*v[3];
-      v_vatom(i,4) += THIRD*v[4]; v_vatom(i,5) += THIRD*v[5];
+      a_vatom(i,0) += THIRD*v[0]; a_vatom(i,1) += THIRD*v[1];
+      a_vatom(i,2) += THIRD*v[2]; a_vatom(i,3) += THIRD*v[3];
+      a_vatom(i,4) += THIRD*v[4]; a_vatom(i,5) += THIRD*v[5];
 
       if (NEIGHFLAG != FULL) {
-        v_vatom(j,0) += THIRD*v[0]; v_vatom(j,1) += THIRD*v[1];
-        v_vatom(j,2) += THIRD*v[2]; v_vatom(j,3) += THIRD*v[3];
-        v_vatom(j,4) += THIRD*v[4]; v_vatom(j,5) += THIRD*v[5];
+        a_vatom(j,0) += THIRD*v[0]; a_vatom(j,1) += THIRD*v[1];
+        a_vatom(j,2) += THIRD*v[2]; a_vatom(j,3) += THIRD*v[3];
+        a_vatom(j,4) += THIRD*v[4]; a_vatom(j,5) += THIRD*v[5];
 
-        v_vatom(k,0) += THIRD*v[0]; v_vatom(k,1) += THIRD*v[1];
-        v_vatom(k,2) += THIRD*v[2]; v_vatom(k,3) += THIRD*v[3];
-        v_vatom(k,4) += THIRD*v[4]; v_vatom(k,5) += THIRD*v[5];
+        a_vatom(k,0) += THIRD*v[0]; a_vatom(k,1) += THIRD*v[1];
+        a_vatom(k,2) += THIRD*v[2]; a_vatom(k,3) += THIRD*v[3];
+        a_vatom(k,4) += THIRD*v[4]; a_vatom(k,5) += THIRD*v[5];
       }
     }
   }

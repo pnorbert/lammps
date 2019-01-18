@@ -25,6 +25,8 @@ class FixNHSphere : public FixNH {
   void init();
 
  protected:
+  double inertia;
+
   void nve_v();
   void nve_x();
   void nh_v_temp();
@@ -40,7 +42,15 @@ E: Fix nvt/nph/npt sphere requires atom style sphere
 
 Self-explanatory.
 
-E: Fix nvt/sphere requires extended particles
+E: Fix nvt/nph/npt sphere disc option requires 2d simulation
+
+UNDOCUMENTED
+
+E: Fix nvt/npt/nph/sphere require extended particles
+
+UNDOCUMENTED
+
+U: Fix nvt/sphere requires extended particles
 
 This fix can only be used for particles of a finite size.
 

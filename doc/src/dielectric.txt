@@ -2,11 +2,11 @@
 
 :link(lws,http://lammps.sandia.gov)
 :link(ld,Manual.html)
-:link(lc,Section_commands.html#comm)
+:link(lc,Commands_all.html)
 
 :line
 
-dielectric command :h3 
+dielectric command :h3
 
 [Syntax:]
 
